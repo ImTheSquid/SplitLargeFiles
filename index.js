@@ -51,8 +51,8 @@ module.exports = (Plugin, Library) => {
                     for (let chunk = 0; chunk < numChunks; chunk++) {
                         const baseOffset = chunk * thisObj.maxFileUploadSize();
                         const bytesToWrite = fileBytes.slice(baseOffset, baseOffset + thisObj.maxFileUploadSize() - 1);
-                        // Write header: "DF" (discord file) then chunk number
-                        bytesToWrite.unshift(0xDF, chunk);
+                        // Write header: "DF" (discord file) then chunk number then total chunk count
+                        bytesToWrite.unshift(0xDF, chunk, numChunks);
                         // Write file to temp directory
                         fs.writeFileSync(path.join(stagingDir, `${chunk}-${fileName}.dlfc`));
                     }
