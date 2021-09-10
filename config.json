@@ -1,0 +1,19 @@
+{
+    "info": {
+        "name": "SplitLargeFiles",
+        "authors": [{
+            "name": "ImTheSquid",
+            "discord_id": "262055523896131584",
+            "github_username": "ImTheSquid",
+            "twitter_username": "ImTheSquid11"
+        }],
+        "version": "0.0.1",
+        "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
+        "github": "",
+        "github_raw": ""
+    },
+    "changelog": [
+        {"title": "Hello, World!", "items": ["Got compilation working", "Added changelog"]}
+    ],
+    "main": "index.js"
+}
