@@ -48,7 +48,7 @@ module.exports = (Plugin, Library) => {
                     const fileBytes = Uint8Array(buffer);
 
                     // Write files with leading bit to determine order
-                    for (var chunk = 0; chunk < numChunks; chunk++) {
+                    for (let chunk = 0; chunk < numChunks; chunk++) {
                         const baseOffset = chunk * thisObj.maxFileUploadSize();
                         const bytesToWrite = fileBytes.slice(baseOffset, baseOffset + thisObj.maxFileUploadSize() - 1);
                         // Write header: "DF" (discord file) then chunk number
@@ -58,8 +58,8 @@ module.exports = (Plugin, Library) => {
                     }
 
                     // Upload new chunked files
-                    for (var chunkFile = 0; chunkFile < numChunks; chunkFile) {
-                        args.file = new File([], path.join(stagingDir, `${chunk}-${fileName}.dlfc`));
+                    for (let chunkFile = 0; chunkFile < numChunks; chunkFile) {
+                        args.file = new File([], path.join(stagingDir, `${chunkFile}-${fileName}.dlfc`));
                         original(args);
                     }
                     
