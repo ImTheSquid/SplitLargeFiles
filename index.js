@@ -59,7 +59,7 @@ module.exports = (Plugin, Library) => {
 
                     // Upload new chunked files
                     for (var chunkFile = 0; chunkFile < numChunks; chunkFile) {
-                        args.file = new File([], path.join(stagingDir, `${chunk}-${fileName}.dlfc`))
+                        args.file = new File([], path.join(stagingDir, `${chunk}-${fileName}.dlfc`));
                         original(args);
                     }
                     
@@ -67,7 +67,7 @@ module.exports = (Plugin, Library) => {
                 })
             });
 
-            Logger.log("Initialization complete")
+            Logger.log("Initialization complete");
         }
 
         // Gets the maximum file upload size for the current server
