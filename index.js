@@ -21,7 +21,7 @@ module.exports = (Plugin, Library) => {
                 if (file.size <= thisObj.maxFileUploadSize()) {
                     original(args);
                     return;
-                } else if (file.size + numChunks * 2 / thisObj.maxFileUploadSize() > 255) { // Check to make sure the number of files when chunked with header is not greater than 255 otherwise fail
+                } else if (file.size + numChunks * 4 / thisObj.maxFileUploadSize() > 255) { // Check to make sure the number of files when chunked with header is not greater than 255 otherwise fail
                     BdApi.showToast("Unable to upload file: File size exceeds max chunk count of 255.", {type:"error"});
                     return;
                 }
@@ -51,8 +51,8 @@ module.exports = (Plugin, Library) => {
                     for (let chunk = 0; chunk < numChunks; chunk++) {
                         const baseOffset = chunk * thisObj.maxFileUploadSize();
                         const bytesToWrite = fileBytes.slice(baseOffset, baseOffset + thisObj.maxFileUploadSize() - 1);
-                        // Write header: "DF" (discord file) then chunk number then total chunk count
-                        bytesToWrite.unshift(0xDF, chunk, numChunks);
+                        // Write header: "DF" (discord file) then protocol version then chunk number then total chunk count
+                        bytesToWrite.unshift(0xDF, 0x00, chunk, numChunks);
                         // Write file to temp directory
                         fs.writeFileSync(path.join(stagingDir, `${chunk}-${fileName}.dlfc`));
                     }
@@ -64,7 +64,7 @@ module.exports = (Plugin, Library) => {
                     }
                     
                     BdApi.showToast("All files uploaded.", {type:"success"});
-                })
+                });
             });
 
             Logger.log("Initialization complete");
