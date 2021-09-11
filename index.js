@@ -55,7 +55,7 @@ module.exports = (Plugin, Library) => {
                     }
                     this.fileUploadMod.instantBatchUpload(channelId, fileList, n);
                     
-                    BdApi.showToast("All files uploading...", {type:"success"});
+                    BdApi.showToast("All files uploading", {type:"success"});
                 });
             });
 
@@ -79,8 +79,68 @@ module.exports = (Plugin, Library) => {
             return this.fileCheckMod.maxFileSize(DiscordAPI.currentGuild) - 1000;
         }
 
+        // Looks through current messages to see which ones have (supposedly) complete .dlfc files and make a list of them
+        // We are unable to completely verify the integrity of the files without downloading them and checking their headers
+        // Checks messages sequentially and will tag messages at the top that don't have complete downloads available for further warnings
+        findAvailableDownloads() {
+            this.registeredDownloads = []
+            for (message in DiscordAPI.currentChannel.messages) {
+                for (attachment in message.discordObject.attachments) {
+                    // Make sure file (somewhat) follows correct format
+                    if (!(isNaN(parseInt(attachment.fileName)) || attachment.fileName.endsWith(".dlfc"))) {
+                        continue;
+                    }
+                    const realName = this.extractRealFileName(attachment.fileName);
+                    const existingEntry = this.registeredDownloads.find(element => element.fileName === realName);
+                    if (existingEntry) {
+                        existingEntry.urls.push(attachment.url)
+                        existingEntry.messages.push(message.id)
+                    } else {
+                        this.registeredDownloads.push({
+                            fileName: realName,
+                            urls: [attachment.url],
+                            messages: [message.id]
+                        })
+                    }
+                }
+            }
+
+            // Filter downloads that aren't contiguous
+            this.registeredDownloads.filter((value, _, __) => {
+                const chunkSet = new Set();
+                let highestChunk = 0;
+                for (const url in value.urls) {
+                    const fileNumber = parseInt(url.slice(url.lastIndexOf("/") + 1));
+                    chunkSet.add(fileNumber);
+                    highestChunk = Math.max(fileNumber, highestChunk);
+                }
+
+                return highestChunk == chunkSet.size;
+            })
+
+            // Iterate over remaining downloads and hide all messages except for the one sent first
+        }
+
+        // Extracts the original file name from the wrapper
+        extractRealFileName(name) {
+
+        }
+
+        // Hides a message with a certain ID
+        hideMessage(id) {
+
+        }
+
         onStop() {
             Patcher.unpatchAll();
+        }
+
+        observer(change) {
+            // Check to see if new chat message was added
+            if (change.addedNodes.length > 0 && change.addedNodes[0].id && change.addedNodes[0].id.includes("chat-message")) {
+                Logger.log("New message detected!");
+            }
+            Logger.log(change);
         }
     }
 }
