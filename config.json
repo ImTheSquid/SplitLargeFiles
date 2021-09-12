@@ -7,7 +7,7 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "0.0.3",
+        "version": "0.0.6",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "",
         "github_raw": ""
