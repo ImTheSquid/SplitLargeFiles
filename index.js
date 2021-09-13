@@ -123,7 +123,6 @@ module.exports = (Plugin, Library) => {
             this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge");
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
             this.contextMenuMod = WebpackModules.getByProps("useContextMenuMessage");
-            this.registeredDownloads = [];
 
             /**
              * UPLOAD MODULE
@@ -226,7 +225,7 @@ module.exports = (Plugin, Library) => {
         // Checks messages sequentially and will tag messages at the top that don't have complete downloads available for further warnings
         findAvailableDownloads() {
             this.observer = null;
-            this.registeredDownloads = [];
+            let registeredDownloads = [];
             for (const message of DiscordAPI.currentChannel.messages) {
                 // If object already searched with nothing then skip
                 if (message.discordObject.noDLFC) {
@@ -243,14 +242,14 @@ module.exports = (Plugin, Library) => {
                     foundDLFCAttachment = true;
                     const realName = this.extractRealFileName(attachment.filename);
                     // Finds the first (latest) entry that has the name that doesn't already have a part of the same index
-                    const existingEntry = this.registeredDownloads.find(element => element.filename === realName && !element.foundParts.has(parseInt(attachment.filename)));
+                    const existingEntry = registeredDownloads.find(element => element.filename === realName && !element.foundParts.has(parseInt(attachment.filename)));
                     if (existingEntry) {
                         existingEntry.urls.push(attachment.url);
                         existingEntry.messages.push({id: message.id, date: message.timestamp});
                         existingEntry.foundParts.add(parseInt(attachment.filename));
                         existingEntry.totalSize += attachment.size;
                     } else {
-                        this.registeredDownloads.unshift({
+                        registeredDownloads.unshift({
                             filename: realName,
                             urls: [attachment.url],
                             messages: [{id: message.id, date: message.timestamp}],
@@ -265,10 +264,9 @@ module.exports = (Plugin, Library) => {
                     message.discordObject.noDLFC = true;
                 }
             }
-            Logger.log(`Downloads found: ${this.registeredDownloads.length}`);
 
             // Filter downloads that aren't contiguous
-            this.registeredDownloads = this.registeredDownloads.filter((value, _, __) => {
+            registeredDownloads = registeredDownloads.filter((value, _, __) => {
                 const chunkSet = new Set();
                 let highestChunk = 0;
                 Logger.log(value);
@@ -287,10 +285,8 @@ module.exports = (Plugin, Library) => {
                 return isSetLinear(chunkSet) && highestChunk + 1 === chunkSet.size;
             });
 
-            Logger.log(`Downloads to hide: ${this.registeredDownloads.length}`);
-
             // Iterate over remaining downloads and hide all messages except for the one sent first
-            this.registeredDownloads.forEach(download => {
+            registeredDownloads.forEach(download => {
                 download.messages.sort((first, second) => first.date - second.date);
                 // Rename first message to real file name
                 this.formatFirstDownloadMessage(download.messages[0].id, download);
