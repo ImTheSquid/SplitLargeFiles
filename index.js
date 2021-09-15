@@ -100,6 +100,7 @@ module.exports = (Plugin, Library) => {
         constructor(props) {
             super(props);
             this.linkWasClicked = this.linkWasClicked.bind(this);
+            Logger.log(props.classes);
             this.state = {
                 elementClasses: props.classes,
                 download: props.download
@@ -113,7 +114,41 @@ module.exports = (Plugin, Library) => {
         }
 
         render() {
-            return React.createElement("a", {class: this.state.elementClasses, onClick: this.linkWasClicked, href:"/"}, this.state.download.filename);
+            return React.createElement("a", {className: this.state.elementClasses, onClick: this.linkWasClicked, href: "/"}, this.state.download.filename);
+        }
+    }
+
+    class IconDownloadLink extends React.Component {
+        constructor(props) {
+            super(props);
+            this.linkWasClicked = this.linkWasClicked.bind(this);
+            this.state = {
+                svgClasses: props.svgClasses,
+                elementClasses: props.classes,
+                innerHTML: props.innerHTML,
+                download: props.download
+            }
+        }
+
+        linkWasClicked(e) {
+            e.preventDefault();
+            BdApi.showToast("Downloading files...", {type: "info"});
+            downloadFiles(this.state.download);
+        }
+
+        render() {
+            return React.createElement("a", {children: this.state.innerHTML, className: this.state.elementClasses, onClick: this.linkWasClicked, href: "/"}, React.createElement("svg", {
+                class: this.state.svgClasses,
+                "aria-hidden": "false",
+                width: "24",
+                height: "24",
+                viewBox: "0 0 24 24"
+              }, React.createElement("path", {
+                fill: "currentColor",
+                "fill-rule": "evenodd",
+                "clip-rule": "evenodd",
+                d: "M16.293 9.293L17.707 10.707L12 16.414L6.29297 10.707L7.70697 9.293L11 12.586V2H13V12.586L16.293 9.293ZM18 20V18H20V20C20 21.102 19.104 22 18 22H6C4.896 22 4 21.102 4 20V18H6V20H18Z"
+              })));
         }
     }
 
@@ -314,8 +349,9 @@ module.exports = (Plugin, Library) => {
                 Logger.error(`Unable to find message attachment contents for message with ID ${id}`);
                 return;
             }
+            const attachment = attachmentContainer.children[0].children[0];
 
-            const attachmentInner = this.findFirstInDOMChildren(attachmentContainer.children[0].children[0], /attachmentInner/, element => element.className);
+            const attachmentInner = this.findFirstInDOMChildren(attachment, /attachmentInner/, element => element.className);
             if (!attachmentInner) {
                 Logger.error(`Unable to find attachmentInner for message with ID ${id}`);
                 return;
@@ -324,6 +360,7 @@ module.exports = (Plugin, Library) => {
             const fileSize = this.findFirstInDOMChildren(attachmentInner, /metadata/, element => element.className);
             if (!fileSize) {
                 Logger.error(`Unable to find filesize metadata for message with ID ${id}`);
+                return;
             }
 
             fileSize.innerHTML = `${(totalSize / 1000000).toFixed(2)} MB Chunk File`;
@@ -332,17 +369,26 @@ module.exports = (Plugin, Library) => {
             const namedLinkWrapper = this.findFirstInDOMChildren(attachmentInner, /filenameLinkWrapper/, element => element.className);
             if (!namedLinkWrapper) {
                 Logger.error(`Unable to find named link for message with ID ${id}`);
+                return;
             }
 
-            // const anchor = namedLinkWrapper.children[0];
-            // anchor.remove();
-            ReactDOM.render(React.createElement(NamedDownloadLink, {elementClasses: namedLinkWrapper.children[0].class, download: download}), namedLinkWrapper);
+            const iconDownloadLink = this.findFirstInDOMChildren(attachment, /.+/, element => element.href);
+            if (!iconDownloadLink) {
+                Logger.error(`Unable to find icon link for message with ID ${id}`);
+                return;
+            }
+            iconDownloadLink.remove();
+            const newIconDownloadContainer = document.createElement("div");
+            attachment.appendChild(newIconDownloadContainer);
+
+            ReactDOM.render(React.createElement(IconDownloadLink, {classes: iconDownloadLink.className, svgClasses: iconDownloadLink.children[0].className.baseVal, download: download}), newIconDownloadContainer);
+            ReactDOM.render(React.createElement(NamedDownloadLink, {classes: namedLinkWrapper.children[0].className, download: download}), namedLinkWrapper);
         }
 
         // childFormat: a function that takes an element and returns the property to be tested by the regex
         findFirstInDOMChildren(element, regex, childFormat) {
             for (const child of element.children) {
-                if (regex.test(childFormat(child))) {
+                if (childFormat(child) && regex.test(childFormat(child))) {
                     return child;
                 }
             }
