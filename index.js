@@ -1,7 +1,7 @@
 "use strict";
 
 module.exports = (Plugin, Library) => {
-    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools} = Library;
+    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, DiscordClasses, DiscordContextMenu} = Library;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
@@ -158,6 +158,10 @@ module.exports = (Plugin, Library) => {
             this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge");
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
             this.contextMenuMod = WebpackModules.getByProps("useContextMenuMessage");
+            this.messageContextMenu = WebpackModules.find(mod => mod.default?.displayName === "MessageContextMenu");
+            this.textChannelContextMenu = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu");
+
+            this.registeredDownloads = [];
 
             /**
              * UPLOAD MODULE
@@ -231,9 +235,40 @@ module.exports = (Plugin, Library) => {
 
             Dispatcher.subscribe("CHANNEL_SELECT", this.channelSelect);
 
-            // Manual refresh button in menu
+            // Manual refresh button in both channel and message menus
+            Patcher.after(this.messageContextMenu, "default", (_, __, ret) => {
+                ret.props.children.splice(4, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
+                    this.findAvailableDownloads();
+                    BdApi.showToast("Downloadables refreshed", {type: "success"});
+                }}));
+            });
+
+            Patcher.after(this.textChannelContextMenu, "default", (_, [arg], ret) => {
+                if (arg.channel.id === DiscordAPI.currentChannel.discordObject.id) {
+                    ret.props.children.splice(1, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
+                        this.findAvailableDownloads();
+                        BdApi.showToast("Downloadables refreshed", {type: "success"});
+                    }}));
+                }
+            });
 
             // Handle deletion of part of file to delete all other parts either by user or automod
+            this.messageDelete = e => {
+                // Disregard if not in same channel
+                if (e.channelId !== DiscordAPI.currentChannel.discordObject.id) {
+                    return;
+                }
+                const download = this.registeredDownloads.find(element => element.messages.find(message => message.id == e.id));
+                if (download) {
+                    for (const message of DiscordAPI.currentChannel.messages) {
+                        if (message.discordObject.id !== e.id && download.messages.find(dMessage => dMessage.id == message.discordObject.id)) {
+                            message.delete();
+                        }
+                    }
+                }
+            }
+
+            Dispatcher.subscribe("MESSAGE_DELETE", this.messageDelete);
 
             /**
              * COMPLETION
@@ -260,7 +295,7 @@ module.exports = (Plugin, Library) => {
         // Checks messages sequentially and will tag messages at the top that don't have complete downloads available for further warnings
         findAvailableDownloads() {
             this.observer = null;
-            let registeredDownloads = [];
+            this.registeredDownloads = [];
             for (const message of DiscordAPI.currentChannel.messages) {
                 // If object already searched with nothing then skip
                 if (message.discordObject.noDLFC) {
@@ -277,14 +312,14 @@ module.exports = (Plugin, Library) => {
                     foundDLFCAttachment = true;
                     const realName = this.extractRealFileName(attachment.filename);
                     // Finds the first (latest) entry that has the name that doesn't already have a part of the same index
-                    const existingEntry = registeredDownloads.find(element => element.filename === realName && !element.foundParts.has(parseInt(attachment.filename)));
+                    const existingEntry = this.registeredDownloads.find(element => element.filename === realName && !element.foundParts.has(parseInt(attachment.filename)));
                     if (existingEntry) {
                         existingEntry.urls.push(attachment.url);
                         existingEntry.messages.push({id: message.id, date: message.timestamp});
                         existingEntry.foundParts.add(parseInt(attachment.filename));
                         existingEntry.totalSize += attachment.size;
                     } else {
-                        registeredDownloads.unshift({
+                        this.registeredDownloads.unshift({
                             filename: realName,
                             urls: [attachment.url],
                             messages: [{id: message.id, date: message.timestamp}],
@@ -301,10 +336,9 @@ module.exports = (Plugin, Library) => {
             }
 
             // Filter downloads that aren't contiguous
-            registeredDownloads = registeredDownloads.filter((value, _, __) => {
+            this.registeredDownloads = this.registeredDownloads.filter((value, _, __) => {
                 const chunkSet = new Set();
                 let highestChunk = 0;
-                Logger.log(value);
                 for (const url of value.urls) {
                     const filename = url.slice(url.lastIndexOf("/") + 1);
                     const fileNumber = parseInt(filename);
@@ -321,7 +355,7 @@ module.exports = (Plugin, Library) => {
             });
 
             // Iterate over remaining downloads and hide all messages except for the one sent first
-            registeredDownloads.forEach(download => {
+            this.registeredDownloads.forEach(download => {
                 download.messages.sort((first, second) => first.date - second.date);
                 // Rename first message to real file name
                 this.formatFirstDownloadMessage(download.messages[0].id, download);
@@ -374,11 +408,14 @@ module.exports = (Plugin, Library) => {
 
             const iconDownloadLink = this.findFirstInDOMChildren(attachment, /.+/, element => element.href);
             if (!iconDownloadLink) {
-                Logger.error(`Unable to find icon link for message with ID ${id}`);
+                if (!this.findFirstInDOMChildren(attachment, /iconChunkDownloader/, element=>element.className)) {
+                    Logger.error(`Unable to find icon link for message with ID ${id}`);
+                }
                 return;
             }
             iconDownloadLink.remove();
             const newIconDownloadContainer = document.createElement("div");
+            newIconDownloadContainer.className = "iconChunkDownloader";
             attachment.appendChild(newIconDownloadContainer);
 
             ReactDOM.render(React.createElement(IconDownloadLink, {classes: iconDownloadLink.className, svgClasses: iconDownloadLink.children[0].className.baseVal, download: download}), newIconDownloadContainer);

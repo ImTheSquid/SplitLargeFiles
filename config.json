@@ -7,10 +7,10 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "0.0.8",
+        "version": "0.0.9",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
-        "github": "",
-        "github_raw": ""
+        "github": "https://github.com/ImTheSquid/SplitLargeFiles",
+        "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/index.js?token=ADMYGCASM4YLHJ7LUD2LPODBIKJYW"
     },
     "changelog": [
         {"title": "Hello, World!", "items": ["Got compilation working", "Added changelog"]}
