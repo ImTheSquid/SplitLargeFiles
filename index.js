@@ -1,7 +1,7 @@
 "use strict";
 
 module.exports = (Plugin, Library) => {
-    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, DiscordClasses, DiscordContextMenu} = Library;
+    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, ReactTools, DiscordContextMenu} = Library;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
@@ -51,8 +51,6 @@ module.exports = (Plugin, Library) => {
         }
 
         Promise.all(promises).then(names => {
-            Logger.log(names);
-
             // Load files into array
             let fileBuffers = [];
             for (const name of names) {
@@ -100,7 +98,6 @@ module.exports = (Plugin, Library) => {
         constructor(props) {
             super(props);
             this.linkWasClicked = this.linkWasClicked.bind(this);
-            Logger.log(props.classes);
             this.state = {
                 elementClasses: props.classes,
                 download: props.download
@@ -137,6 +134,7 @@ module.exports = (Plugin, Library) => {
         }
 
         render() {
+            // Can't create React child component from original SVG due to lack of ability to properly inline divs in anchors
             return React.createElement("a", {children: this.state.innerHTML, className: this.state.elementClasses, onClick: this.linkWasClicked, href: "/"}, React.createElement("svg", {
                 class: this.state.svgClasses,
                 "aria-hidden": "false",
@@ -162,6 +160,7 @@ module.exports = (Plugin, Library) => {
             this.textChannelContextMenu = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu");
 
             this.registeredDownloads = [];
+            this.incompleteDownloads = [];
 
             /**
              * UPLOAD MODULE
@@ -236,11 +235,19 @@ module.exports = (Plugin, Library) => {
             Dispatcher.subscribe("CHANNEL_SELECT", this.channelSelect);
 
             // Manual refresh button in both channel and message menus
-            Patcher.after(this.messageContextMenu, "default", (_, __, ret) => {
+            Patcher.after(this.messageContextMenu, "default", (_, [arg], ret) => {
                 ret.props.children.splice(4, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
                     this.findAvailableDownloads();
                     BdApi.showToast("Downloadables refreshed", {type: "success"});
                 }}));
+                // Due to issues with the permissions API only allow users to delete their own download fragments
+                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === DiscordAPI.currentUser.discordObject.id);
+                if (incomplete) {
+                    ret.props.children.splice(6, 0, DiscordContextMenu.buildMenuItem({label: "Delete Download Fragments", danger: true, action: () => {
+                        this.deleteDownload(incomplete);
+                        this.findAvailableDownloads();
+                    }}));
+                }
             });
 
             Patcher.after(this.textChannelContextMenu, "default", (_, [arg], ret) => {
@@ -260,12 +267,9 @@ module.exports = (Plugin, Library) => {
                 }
                 const download = this.registeredDownloads.find(element => element.messages.find(message => message.id == e.id));
                 if (download) {
-                    for (const message of DiscordAPI.currentChannel.messages) {
-                        if (message.discordObject.id !== e.id && download.messages.find(dMessage => dMessage.id == message.discordObject.id)) {
-                            message.delete();
-                        }
-                    }
+                    this.deleteDownload(download, e.id);
                 }
+                this.findAvailableDownloads();
             }
 
             Dispatcher.subscribe("MESSAGE_DELETE", this.messageDelete);
@@ -296,6 +300,7 @@ module.exports = (Plugin, Library) => {
         findAvailableDownloads() {
             this.observer = null;
             this.registeredDownloads = [];
+            this.incompleteDownloads = [];
             for (const message of DiscordAPI.currentChannel.messages) {
                 // If object already searched with nothing then skip
                 if (message.discordObject.noDLFC) {
@@ -321,6 +326,7 @@ module.exports = (Plugin, Library) => {
                     } else {
                         this.registeredDownloads.unshift({
                             filename: realName,
+                            owner: message.discordObject.author.id,
                             urls: [attachment.url],
                             messages: [{id: message.id, date: message.timestamp}],
                             foundParts: new Set([parseInt(attachment.filename)]),
@@ -347,11 +353,16 @@ module.exports = (Plugin, Library) => {
                     if (highestChunk === 0) {
                         highestChunk = fileTotal;
                     } else if (highestChunk !== fileTotal) {
+                        this.incompleteDownloads.push(value);
                         return false;
                     }
                 }
 
-                return isSetLinear(chunkSet) && highestChunk + 1 === chunkSet.size;
+                const result = isSetLinear(chunkSet) && highestChunk + 1 === chunkSet.size;
+                if (!result) {
+                    this.incompleteDownloads.push(value);
+                }
+                return result;
             });
 
             // Iterate over remaining downloads and hide all messages except for the one sent first
@@ -439,6 +450,23 @@ module.exports = (Plugin, Library) => {
                 element.setAttribute("hidden", "");
             } else {
                 Logger.error(`Unable to find DOM object with selector #chat-messages-${id}`);
+            }
+        }
+
+        // Deletes messages in a staggered manner to avoid API rate limiting
+        deleteDownload(download, excludeMessage) {
+            let delayCount = 0;
+            for (const message of DiscordAPI.currentChannel.messages) {
+                const downloadMessage = download.messages.find(dMessage => dMessage.id == message.discordObject.id);
+                if (downloadMessage) {
+                    if (excludeMessage && message.discordObject.id === excludeMessage.id) {
+                        continue;
+                    }
+                    const downloadMessageIndex = download.messages.indexOf(downloadMessage);
+                    download.messages.splice(downloadMessageIndex, 1);
+                    setTimeout(() => message.delete(), delayCount * 1000);
+                    delayCount += 1;
+                }
             }
         }
 
