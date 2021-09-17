@@ -7,10 +7,10 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "0.1.0",
+        "version": "0.1.1",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
-        "github_raw": ""
+        "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
         {"title": "First Beta Release", "items": ["Completed base features"]}
