@@ -32,7 +32,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"0.1.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"First Beta Release","items":["Completed base features"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"0.1.2","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes","items":["Fixed issue with initial channel loading."]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -295,7 +295,7 @@ module.exports = (() => {
 
             this.messageCreate = e => {
                 // Disregard if not in same channel or in process of being sent
-                if (e.channelId !== DiscordAPI.currentChannel.discordObject.id || !e.message.guild_id) {
+                if (e.channelId !== DiscordAPI.currentChannel?.discordObject.id || !e.message.guild_id) {
                     return;
                 }
                 this.lastMessageCreatedId = e.message.id;
@@ -318,7 +318,7 @@ module.exports = (() => {
                     BdApi.showToast("Downloadables refreshed", {type: "success"});
                 }}));
                 // Due to issues with the permissions API only allow users to delete their own download fragments
-                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === DiscordAPI.currentUser.discordObject.id);
+                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === DiscordAPI.currentUser?.discordObject.id);
                 if (incomplete) {
                     ret.props.children.splice(6, 0, DiscordContextMenu.buildMenuItem({label: "Delete Download Fragments", danger: true, action: () => {
                         this.deleteDownload(incomplete);
@@ -328,7 +328,7 @@ module.exports = (() => {
             });
 
             Patcher.after(this.textChannelContextMenu, "default", (_, [arg], ret) => {
-                if (arg.channel.id === DiscordAPI.currentChannel.discordObject.id) {
+                if (arg.channel.id === DiscordAPI.currentChannel?.discordObject.id) {
                     ret.props.children.splice(1, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
                         this.findAvailableDownloads();
                         BdApi.showToast("Downloadables refreshed", {type: "success"});
@@ -339,7 +339,7 @@ module.exports = (() => {
             // Handle deletion of part of file to delete all other parts either by user or automod
             this.messageDelete = e => {
                 // Disregard if not in same channel
-                if (e.channelId !== DiscordAPI.currentChannel.discordObject.id) {
+                if (e.channelId !== DiscordAPI.currentChannel?.discordObject.id) {
                     return;
                 }
                 const download = this.registeredDownloads.find(element => element.messages.find(message => message.id == e.id));
@@ -380,7 +380,9 @@ module.exports = (() => {
 
         // Gets the maximum file upload size for the current server
         maxFileUploadSize() {
-            if (!this.fileCheckMod) return 0;
+            if (!(this.fileCheckMod && DiscordAPI.currentGuild)) {
+                return 0;
+            }
 
             // Built-in buffer, otherwise file upload fails
             return this.fileCheckMod.maxFileSize(DiscordAPI.currentGuild) - 1000;
@@ -393,7 +395,7 @@ module.exports = (() => {
             this.observer = null;
             this.registeredDownloads = [];
             this.incompleteDownloads = [];
-            for (const message of DiscordAPI.currentChannel.messages) {
+            for (const message of DiscordAPI.currentChannel?.messages) {
                 // If object already searched with nothing then skip
                 if (message.discordObject.noDLFC) {
                     continue;
@@ -548,7 +550,7 @@ module.exports = (() => {
         // Deletes messages in a staggered manner to avoid API rate limiting
         deleteDownload(download, excludeMessage) {
             let delayCount = 0;
-            for (const message of DiscordAPI.currentChannel.messages) {
+            for (const message of DiscordAPI.currentChannel?.messages) {
                 const downloadMessage = download.messages.find(dMessage => dMessage.id == message.discordObject.id);
                 if (downloadMessage) {
                     if (excludeMessage && message.discordObject.id === excludeMessage.id) {
