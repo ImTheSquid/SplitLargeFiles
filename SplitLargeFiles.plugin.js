@@ -32,7 +32,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"0.1.2","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes","items":["Fixed issue with initial channel loading."]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"0.2.0","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes 2: Electric Boogaloo","items":["Fixed issue with chunking not working in non-server environments."]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -251,6 +251,10 @@ module.exports = (() => {
             // Patch upload call to either pass file unaltered if under limit or chunked if over
             Patcher.instead(this.fileUploadMod, "upload", (_, args, original) => {
                 const [channelId, file, n] = args;
+                if (this.maxFileUploadSize() === 0) {
+                    BdApi("Failed to get max file upload size.", {type: "error"});
+                    return;
+                }
                 // Create a small buffer under limit
                 const numChunks = Math.ceil(file.size / this.maxFileUploadSize());
                 const numChunksWithHeaders = Math.ceil(file.size / (this.maxFileUploadSize() - 4));
@@ -295,7 +299,7 @@ module.exports = (() => {
 
             this.messageCreate = e => {
                 // Disregard if not in same channel or in process of being sent
-                if (e.channelId !== DiscordAPI.currentChannel?.discordObject.id || !e.message.guild_id) {
+                if (e.channelId !== DiscordAPI.currentChannel?.discordObject.id) {
                     return;
                 }
                 this.lastMessageCreatedId = e.message.id;
@@ -380,7 +384,7 @@ module.exports = (() => {
 
         // Gets the maximum file upload size for the current server
         maxFileUploadSize() {
-            if (!(this.fileCheckMod && DiscordAPI.currentGuild)) {
+            if (!this.fileCheckMod) {
                 return 0;
             }
 
