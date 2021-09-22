@@ -453,17 +453,9 @@ module.exports = (Plugin, Library) => {
 
         // Converts the first download message into a readable format that displays the original file name and size
         formatFirstDownloadMessage(id, download) {
-            const {name, totalSize} = download;
-            // Find message div
-            const messageDiv = DOMTools.query(`#chat-messages-${id}`);
+            const {totalSize} = download;
 
-            // Find and edit name and size data
-            const attachmentContainer = this.findFirstInDOMChildren(messageDiv, /container/, element => element.className);
-            if (!attachmentContainer) {
-                Logger.error(`Unable to find message attachment contents for message with ID ${id}`);
-                return;
-            }
-            const attachment = attachmentContainer.children[0].children[0];
+            const attachment = DOMTools.query(`#message-accessories-${id}`).children[0].children[0];
 
             const attachmentInner = this.findFirstInDOMChildren(attachment, /attachmentInner/, element => element.className);
             if (!attachmentInner) {
@@ -489,7 +481,7 @@ module.exports = (Plugin, Library) => {
 
             const iconDownloadLink = this.findFirstInDOMChildren(attachment, /.+/, element => element.href);
             if (!iconDownloadLink) {
-                if (!this.findFirstInDOMChildren(attachment, /iconChunkDownloader/, element=>element.className)) {
+                if (!this.findFirstInDOMChildren(attachment, /iconChunkDownloader/, element => element.className)) {
                     Logger.error(`Unable to find icon link for message with ID ${id}`);
                 }
                 return;

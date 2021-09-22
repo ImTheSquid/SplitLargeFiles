@@ -7,13 +7,13 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.0.0",
+        "version": "1.0.1",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "First Full Release", "items": ["Added setting to control chunk deletion time"]}
+        {"title": "Bug Fixes", "items": ["Fixed issue where message formatting wouldn't work"]}
     ],
     "main": "index.js"
 }
