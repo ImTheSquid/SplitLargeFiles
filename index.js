@@ -2,7 +2,7 @@
 
 module.exports = (Plugin, Library) => {
     const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings, PluginUpdater} = Library;
-    const {SettingPanel, Switch, Textbox} = Settings;
+    const {SettingPanel, Switch, Textbox, Slider} = Settings;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
@@ -83,6 +83,7 @@ module.exports = (Plugin, Library) => {
                 return;
             }
             outputFile.close(() => {
+                // Save file to valid directory and open it if required
                 BdApi.showToast("File reassembled successfully", {type: "success"});
                 let saveDir = settings.fileSavePath;
                 if (!fs.lstatSync(settings.fileSavePath).isDirectory()) {
@@ -91,8 +92,7 @@ module.exports = (Plugin, Library) => {
                 fs.copyFileSync(path.join(tempFolder, `${download.filename}`), path.join(saveDir, `${download.filename}`));
                 fs.rmdirSync(tempFolder, {recursive: true});
                 if (settings.openFileAfterSave) {
-                    const electron = require("electron");
-                    electron.shell.showItemInFolder(path.join(saveDir, `${download.filename}`));
+                    require("electron").shell.showItemInFolder(path.join(saveDir, `${download.filename}`));
                 }
             });
         })
@@ -161,13 +161,18 @@ module.exports = (Plugin, Library) => {
 
     const defaultSettingsData = {
         openFileAfterSave: false,
-        fileSavePath: require("path").join(require("os").homedir(), "Downloads")
+        fileSavePath: require("path").join(require("os").homedir(), "Downloads"),
+        deletionDelay: 9
     };
     let settings = {};
 
     const reloadSettings = () => {
         settings = PluginUtilities.loadSettings("SplitLargeFiles", defaultSettingsData);
     };
+
+    // Default values for how long to wait to delete a chunk file
+    // Values should be around the time a normal user would take to delete each file
+    const validDeletionDelays = [6, 7, 8, 9, 10, 11, 12];
 
     class SplitLargeFiles extends Plugin {
         onStart() {
@@ -196,11 +201,12 @@ module.exports = (Plugin, Library) => {
             // Patch upload call to either pass file unaltered if under limit or chunked if over
             Patcher.instead(this.fileUploadMod, "upload", (_, args, original) => {
                 const [channelId, file, n] = args;
+                // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
                     BdApi("Failed to get max file upload size.", {type: "error"});
                     return;
                 }
-                // Create a small buffer under limit
+                // Calculate chunks required
                 const numChunks = Math.ceil(file.size / this.maxFileUploadSize());
                 const numChunksWithHeaders = Math.ceil(file.size / (this.maxFileUploadSize() - 4));
                 // Don't do anything if no changes needed
@@ -232,6 +238,7 @@ module.exports = (Plugin, Library) => {
                         // Add file to array
                         fileList.push(new File([concatTypedArrays(headerBytes, bytesToWrite)], `${chunk}-${numChunks - 1}_${file.name}.dlfc`));
                     }
+                    // Upload through built-in batch system
                     this.fileUploadMod.instantBatchUpload(channelId, fileList, n);
                     
                     BdApi.showToast("All files uploading", {type: "success"});
@@ -254,7 +261,7 @@ module.exports = (Plugin, Library) => {
             Dispatcher.subscribe("MESSAGE_CREATE", this.messageCreate);
 
             this.channelSelect = _ => {
-                // Wait a bit to allow DOM to update
+                // Wait a bit to allow DOM to update before refreshing
                 setTimeout(() => this.findAvailableDownloads(), 100);
             };
 
@@ -306,12 +313,14 @@ module.exports = (Plugin, Library) => {
 
             Logger.log("Initialization complete");
             BdApi.showToast("Waiting for BetterDiscord to load before refreshing downloadables...", {type: "info"});
+            // Wait for DOM to render before trying to find downloads
             setTimeout(() => {
                 BdApi.showToast("Downloadables refreshed", {type: "success"});
                 this.findAvailableDownloads()
             }, 10000);
         }
 
+        // Create the settings panel
         getSettingsPanel() {
             reloadSettings();
             return new SettingPanel(() => { PluginUtilities.saveSettings("SplitLargeFiles", settings); }, 
@@ -323,7 +332,19 @@ module.exports = (Plugin, Library) => {
                         settings.fileSavePath = folderPath;
                     }
                 }, {placeholder: defaultSettingsData.fileSavePath}),
-                new Switch("Open File Location After Save", "Open the reassembled file's location after it is saved.", settings.openFileAfterSave, newVal => { settings.openFileAfterSave = newVal; })
+                new Switch("Open File Location After Save", "Open the reassembled file's location after it is saved.", settings.openFileAfterSave, newVal => { 
+                    settings.openFileAfterSave = newVal; 
+                }),
+                new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
+                    " If you plan on uploading VERY large files you should set this value high to avoid API spam.", 
+                    validDeletionDelays[0], validDeletionDelays[validDeletionDelays.length - 1], settings.deletionDelay, newVal => {
+                        Logger.log(newVal);
+                        // Make sure value is in bounds
+                        if (newVal > validDeletionDelays[validDeletionDelays.length - 1] || newVal < validDeletionDelays[0]) {
+                            newVal = 1.5;
+                        }
+                        settings.deletionDelay = newVal;
+                    }, {markers: validDeletionDelays, stickToMarkers: true})
             ).getElement();
         }
 
@@ -341,7 +362,6 @@ module.exports = (Plugin, Library) => {
         // We are unable to completely verify the integrity of the files without downloading them and checking their headers
         // Checks messages sequentially and will tag messages at the top that don't have complete downloads available for further warnings
         findAvailableDownloads() {
-            this.observer = null;
             this.registeredDownloads = [];
             this.incompleteDownloads = [];
             for (const message of DiscordAPI.currentChannel?.messages) {
@@ -353,7 +373,7 @@ module.exports = (Plugin, Library) => {
                 // Check for DLFC files
                 let foundDLFCAttachment = false;
                 for (const attachment of message.discordObject.attachments) {
-                    // Make sure file (somewhat) follows correct format
+                    // Make sure file (somewhat) follows correct format, if not then skip
                     if (isNaN(parseInt(attachment.filename)) || !attachment.filename.endsWith(".dlfc")) {
                         continue;
                     }
@@ -362,11 +382,13 @@ module.exports = (Plugin, Library) => {
                     // Finds the first (latest) entry that has the name that doesn't already have a part of the same index
                     const existingEntry = this.registeredDownloads.find(element => element.filename === realName && !element.foundParts.has(parseInt(attachment.filename)));
                     if (existingEntry) {
+                        // Add to existing entry if found
                         existingEntry.urls.push(attachment.url);
                         existingEntry.messages.push({id: message.id, date: message.timestamp});
                         existingEntry.foundParts.add(parseInt(attachment.filename));
                         existingEntry.totalSize += attachment.size;
                     } else {
+                        // Create new download
                         this.registeredDownloads.unshift({
                             filename: realName,
                             owner: message.discordObject.author.id,
@@ -389,6 +411,7 @@ module.exports = (Plugin, Library) => {
                 const chunkSet = new Set();
                 let highestChunk = 0;
                 for (const url of value.urls) {
+                    // Extract file data from URL and add it to check vars
                     const filename = url.slice(url.lastIndexOf("/") + 1);
                     const fileNumber = parseInt(filename);
                     const fileTotal = parseInt(filename.slice(filename.indexOf("-") + 1));
@@ -401,8 +424,10 @@ module.exports = (Plugin, Library) => {
                     }
                 }
 
+                // Make sure all number parts are present and the highest chunk + 1 is equal to the size (zero indexing)
                 const result = isSetLinear(chunkSet) && highestChunk + 1 === chunkSet.size;
                 if (!result) {
+                    // Add to incomplete download register if failed
                     this.incompleteDownloads.push(value);
                 }
                 return result;
@@ -416,7 +441,7 @@ module.exports = (Plugin, Library) => {
 
                 // Hide the rest of the messages
                 for (let messageIndex = 1; messageIndex < download.messages.length; messageIndex++) {
-                    this.hideMessage(download.messages[messageIndex].id);
+                    this.setMessageVisibility(download.messages[messageIndex].id, false);
                 }
             });
         }
@@ -426,6 +451,7 @@ module.exports = (Plugin, Library) => {
             return name.slice(name.indexOf("_") + 1, name.length - 5);
         }
 
+        // Converts the first download message into a readable format that displays the original file name and size
         formatFirstDownloadMessage(id, download) {
             const {name, totalSize} = download;
             // Find message div
@@ -451,6 +477,7 @@ module.exports = (Plugin, Library) => {
                 return;
             }
 
+            // Change size to show real size
             fileSize.innerHTML = `${(totalSize / 1000000).toFixed(2)} MB Chunk File`;
 
             // Change links to run internal download and reassemble function
@@ -486,18 +513,24 @@ module.exports = (Plugin, Library) => {
             return null;
         }
 
-        // Hides a message with a certain ID
-        hideMessage(id) {
+        // Shows/hides a message with a certain ID
+        setMessageVisibility(id, visible) {
             const element = DOMTools.query(`#chat-messages-${id}`);
             if (element) {
-                element.setAttribute("hidden", "");
+                if (visible) {
+                    element.removeAttribute("hidden");
+                } else {
+                    element.setAttribute("hidden", "");
+                }
             } else {
                 Logger.error(`Unable to find DOM object with selector #chat-messages-${id}`);
             }
         }
 
-        // Deletes messages in a staggered manner to avoid API rate limiting
+        // Deletes a download with a delay to make sure Discord's API isn't spammed
+        // Excludes a message that was already deleted
         deleteDownload(download, excludeMessage) {
+            BdApi.showToast(`Deleting chunks (1 chunk/${settings.deletionDelay} seconds)`, {type: "success"});
             let delayCount = 0;
             for (const message of DiscordAPI.currentChannel?.messages) {
                 const downloadMessage = download.messages.find(dMessage => dMessage.id == message.discordObject.id);
@@ -505,9 +538,10 @@ module.exports = (Plugin, Library) => {
                     if (excludeMessage && message.discordObject.id === excludeMessage.id) {
                         continue;
                     }
+                    this.setMessageVisibility(message.discordObject.id, true);
                     const downloadMessageIndex = download.messages.indexOf(downloadMessage);
                     download.messages.splice(downloadMessageIndex, 1);
-                    setTimeout(() => message.delete(), delayCount * 1000);
+                    setTimeout(() => message.delete(), delayCount * settings.deletionDelay * 1000);
                     delayCount += 1;
                 }
             }
