@@ -199,7 +199,9 @@ module.exports = (Plugin, Library) => {
             });
 
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
-            Patcher.instead(this.fileCheckMod, "maxFileSize", (_, [arg, use_original], original) => {
+            Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {
+                // Must be this way otherwise errors occur with undefined unwrapping
+                const [arg, use_original] = args;
                 if (use_original) {
                     return original(arg);
                 }

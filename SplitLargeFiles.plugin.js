@@ -32,7 +32,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.1.0","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Fixes and Additions","items":["Fixed issue that prevented files from being split if uploaded using \"+\" button","Added more error log info"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.1.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Fixes and Additions","items":["Fixed issue that prevented files from being split if uploaded using \"+\" button","Added more error log info","Fixed other errors"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -254,7 +254,9 @@ module.exports = (() => {
             });
 
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
-            Patcher.instead(this.fileCheckMod, "maxFileSize", (_, [arg, use_original], original) => {
+            Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {
+                // Must be this way otherwise errors occur with undefined unwrapping
+                const [arg, use_original] = args;
                 if (use_original) {
                     return original(arg);
                 }
