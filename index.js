@@ -198,8 +198,17 @@ module.exports = (Plugin, Library) => {
                 return false;
             });
 
+            // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
+            Patcher.instead(this.fileCheckMod, "maxFileSize", (_, [arg, use_original], original) => {
+                if (use_original) {
+                    return original(arg);
+                }
+                return Number.MAX_VALUE;
+            });
+
             // Patch upload call to either pass file unaltered if under limit or chunked if over
             Patcher.instead(this.fileUploadMod, "upload", (_, args, original) => {
+                Logger.log("UPLAOD!!!")
                 const [channelId, file, n] = args;
                 // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
@@ -214,7 +223,7 @@ module.exports = (Plugin, Library) => {
                     original(...args);
                     return;
                 } else if (numChunksWithHeaders > 255) { // Check to make sure the number of files when chunked with header is not greater than 255 otherwise fail
-                    BdApi.showToast("Unable to upload file: File size exceeds max chunk count of 255.", {type: "error"});
+                    BdApi.showToast("File size exceeds max chunk count of 255.", {type: "error"});
                     return;
                 }
 
@@ -242,6 +251,9 @@ module.exports = (Plugin, Library) => {
                     this.fileUploadMod.instantBatchUpload(channelId, fileList, n);
                     
                     BdApi.showToast("All files uploading", {type: "success"});
+                }).catch(err => {
+                    Logger.error(err);
+                    BdApi.showToast("Failed to read file, please try again later.", {type: "error"})
                 });
             });
 
@@ -355,7 +367,7 @@ module.exports = (Plugin, Library) => {
             }
 
             // Built-in buffer, otherwise file upload fails
-            return this.fileCheckMod.maxFileSize(DiscordAPI.currentGuild) - 1000;
+            return this.fileCheckMod.maxFileSize(DiscordAPI.currentGuild, true) - 1000;
         }
 
         // Looks through current messages to see which ones have (supposedly) complete .dlfc files and make a list of them
