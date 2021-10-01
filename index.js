@@ -2,7 +2,7 @@
 
 module.exports = (Plugin, Library) => {
     const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings, PluginUpdater} = Library;
-    const {SettingPanel, Switch, Textbox, Slider} = Settings;
+    const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
@@ -162,7 +162,9 @@ module.exports = (Plugin, Library) => {
     const defaultSettingsData = {
         openFileAfterSave: false,
         fileSavePath: require("path").join(require("os").homedir(), "Downloads"),
-        deletionDelay: 9
+        deletionDelay: 9,
+        uploadDelay: 9,
+        uploadBatchSize: 3
     };
     let settings = {};
 
@@ -170,9 +172,12 @@ module.exports = (Plugin, Library) => {
         settings = PluginUtilities.loadSettings("SplitLargeFiles", defaultSettingsData);
     };
 
-    // Default values for how long to wait to delete a chunk file
-    // Values should be around the time a normal user would take to delete each file
-    const validDeletionDelays = [6, 7, 8, 9, 10, 11, 12];
+    // Default values for how long to wait to delete or upload a chunk file
+    // Values should be around the time a normal user would take to delete or upload each file
+    const validActionDelays = [6, 7, 8, 9, 10, 11, 12];
+
+    // Default values for how many files can be uploaded per upload cycle
+    const validUploadBatchSizes = [...Array(11).keys()].slice(1);
 
     class SplitLargeFiles extends Plugin {
         onStart() {
@@ -210,7 +215,6 @@ module.exports = (Plugin, Library) => {
 
             // Patch upload call to either pass file unaltered if under limit or chunked if over
             Patcher.instead(this.fileUploadMod, "upload", (_, args, original) => {
-                Logger.log("UPLAOD!!!")
                 const [channelId, file, n] = args;
                 // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
@@ -249,10 +253,14 @@ module.exports = (Plugin, Library) => {
                         // Add file to array
                         fileList.push(new File([concatTypedArrays(headerBytes, bytesToWrite)], `${chunk}-${numChunks - 1}_${file.name}.dlfc`));
                     }
+
+                    const batchSize = settings.uploadBatchSize;
+                    for (let i = 0; i < Math.ceil(fileList.length / batchSize); ++i) {
+                        setTimeout(() => this.fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1000);
+                    }
                     // Upload through built-in batch system
-                    this.fileUploadMod.instantBatchUpload(channelId, fileList, n);
                     
-                    BdApi.showToast("All files uploading", {type: "success"});
+                    BdApi.showToast(`All files uploading (${batchSize} chunk${batchSize == 1 ? "" : "s"}/${settings.uploadDelay} seconds)`, {type: "success"});
                 }).catch(err => {
                     Logger.error(err);
                     BdApi.showToast("Failed to read file, please try again later.", {type: "error"})
@@ -338,27 +346,51 @@ module.exports = (Plugin, Library) => {
         getSettingsPanel() {
             reloadSettings();
             return new SettingPanel(() => { PluginUtilities.saveSettings("SplitLargeFiles", settings); }, 
-                new Textbox("Default File Save Path", "Path to save reassembled file to." + 
-                " An invalid path will result in the file being saved to the Downloads folder in your home directory.", settings.fileSavePath, folderPath => {
-                    if (!folderPath) {
-                        settings.fileSavePath = defaultSettingsData.fileSavePath;
-                    } else {
-                        settings.fileSavePath = folderPath;
-                    }
-                }, {placeholder: defaultSettingsData.fileSavePath}),
-                new Switch("Open File Location After Save", "Open the reassembled file's location after it is saved.", settings.openFileAfterSave, newVal => { 
-                    settings.openFileAfterSave = newVal; 
-                }),
-                new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
-                    " If you plan on uploading VERY large files you should set this value high to avoid API spam.", 
-                    validDeletionDelays[0], validDeletionDelays[validDeletionDelays.length - 1], settings.deletionDelay, newVal => {
-                        Logger.log(newVal);
-                        // Make sure value is in bounds
-                        if (newVal > validDeletionDelays[validDeletionDelays.length - 1] || newVal < validDeletionDelays[0]) {
-                            newVal = 1.5;
-                        }
-                        settings.deletionDelay = newVal;
-                    }, {markers: validDeletionDelays, stickToMarkers: true})
+                new SettingGroup("Downloads").append(
+                    new Textbox("Default File Save Path", "Path to save reassembled file to." + 
+                        " An invalid path will result in the file being saved to the Downloads folder in your home directory.", settings.fileSavePath, folderPath => {
+                            if (!folderPath) {
+                                settings.fileSavePath = defaultSettingsData.fileSavePath;
+                            } else {
+                                settings.fileSavePath = folderPath;
+                            }
+                        }, {placeholder: defaultSettingsData.fileSavePath}),
+
+                    new Switch("Open File Location After Save", "Open the reassembled file's location after it is saved.", settings.openFileAfterSave, newVal => { 
+                        settings.openFileAfterSave = newVal; 
+                    }),
+
+                    new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
+                        " If you plan on uploading VERY large files you should set this value high to avoid API spam.", 
+                        validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.deletionDelay, newVal => {
+                            // Make sure value is in bounds
+                            if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
+                                newVal = validActionDelays[0];
+                            }
+                            settings.deletionDelay = newVal;
+                        }, {markers: validActionDelays, stickToMarkers: true})
+                ),
+                new SettingGroup("Uploads").append(
+                    new Slider("Chunk File Upload Batch Size", "Number of chunk files to queue per upload operation." + 
+                        " Setting this higher uploads your files faster but increases the chance of upload errors.", 
+                        validUploadBatchSizes[0], validUploadBatchSizes[validUploadBatchSizes.length - 1], settings.uploadBatchSize, newVal => {
+                            // Make sure value is in bounds
+                            if (newVal > validUploadBatchSizes[validUploadBatchSizes.length - 1] || newVal < validUploadBatchSizes[0]) {
+                                newVal = validUploadBatchSizes[0];
+                            }
+                            settings.uploadBatchSize = newVal;
+                        }, {markers: validUploadBatchSizes, stickToMarkers: true}),
+
+                    new Slider("Chunk File Upload Delay", "How long to wait (in seconds) before uploading each chunk file batch." + 
+                        " If you plan on uploading VERY large files you should set this value high to avoid API spam.",
+                        validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.uploadDelay, newVal => {
+                            // Make sure value is in bounds
+                            if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
+                                newVal = validActionDelays[0];
+                            }
+                            settings.uploadDelay = newVal;
+                        }, {markers: validActionDelays, stickToMarkers: true})
+                )
             ).getElement();
         }
 

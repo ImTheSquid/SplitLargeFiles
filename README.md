@@ -1,5 +1,7 @@
 # Split Large Files
-Split large files is a BetterDiscord plugin that makes sending large files easy by breaking up big files into smaller ones that get reassembled upon download. With the current version's protocol, a theoretical max file size of around 2 GB for normal users or around 25 GB for Nitro users is possible! Realistically Discord caps the number of files in a single upload at around 10-15 so your mileage may vary.
+Split large files is a BetterDiscord plugin that makes sending large files easy by breaking up big files into smaller ones that get reassembled upon download. 
+
+The Node engine that Discord runs on only supports a max file size of 2 GB, so don't expect to upload files above 1.5 GB. An error may not be displayed on failure if you try to upload files greater than 1 GB.
 
 If you are unable to install BetterDiscord or Split Large Files and you want to reassemble a set of chunk files someone sent you, go [here](https://imthesquid.github.io/).
 

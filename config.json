@@ -7,13 +7,13 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.1.1",
+        "version": "1.2.0",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "Fixes and Additions", "items": ["Fixed issue that prevented files from being split if uploaded using \"+\" button", "Added more error log info", "Fixed other errors"]}
+        {"title": "Upload Overhaul", "items": ["Changed files to upload in resizable batches with a configurable delay"]}
     ],
     "main": "index.js"
 }
