@@ -1,7 +1,7 @@
 "use strict";
 
 module.exports = (Plugin, Library) => {
-    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings, PluginUpdater} = Library;
+    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings} = Library;
     const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
@@ -98,7 +98,7 @@ module.exports = (Plugin, Library) => {
         })
         .catch(err => {
             Logger.error(err);
-            BdApi.showToast(`Failed to download file`, {type: "error"});
+            BdApi.showToast("Failed to download file, please try again later.", {type: "error"});
             fs.rmdirSync(tempFolder, {recursive: true});
         })
     }
@@ -205,7 +205,7 @@ module.exports = (Plugin, Library) => {
 
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
             Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {
-                // Must be this way otherwise errors occur with undefined unwrapping
+                // Must be unwrapped this way otherwise errors occur with undefined unwrapping
                 const [arg, use_original] = args;
                 if (use_original) {
                     return original(arg);
@@ -218,7 +218,7 @@ module.exports = (Plugin, Library) => {
                 const [channelId, file, n] = args;
                 // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
-                    BdApi("Failed to get max file upload size.", {type: "error"});
+                    BdApi.showToast("Failed to get max file upload size.", {type: "error"});
                     return;
                 }
                 // Calculate chunks required

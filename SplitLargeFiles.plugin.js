@@ -32,7 +32,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.2.0","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Upload Overhaul","items":["Changed files to upload in resizable batches with a configurable delay"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.2.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Small Fixes","items":["Fixed some small issues and inconsistencies in code structure"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -56,7 +56,7 @@ module.exports = (() => {
         stop() {}
     } : (([Plugin, Api]) => {
         const plugin = (Plugin, Library) => {
-    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings, PluginUpdater} = Library;
+    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings} = Library;
     const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
@@ -153,7 +153,7 @@ module.exports = (() => {
         })
         .catch(err => {
             Logger.error(err);
-            BdApi.showToast(`Failed to download file`, {type: "error"});
+            BdApi.showToast("Failed to download file, please try again later.", {type: "error"});
             fs.rmdirSync(tempFolder, {recursive: true});
         })
     }
@@ -260,7 +260,7 @@ module.exports = (() => {
 
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
             Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {
-                // Must be this way otherwise errors occur with undefined unwrapping
+                // Must be unwrapped this way otherwise errors occur with undefined unwrapping
                 const [arg, use_original] = args;
                 if (use_original) {
                     return original(arg);
@@ -273,7 +273,7 @@ module.exports = (() => {
                 const [channelId, file, n] = args;
                 // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
-                    BdApi("Failed to get max file upload size.", {type: "error"});
+                    BdApi.showToast("Failed to get max file upload size.", {type: "error"});
                     return;
                 }
                 // Calculate chunks required
