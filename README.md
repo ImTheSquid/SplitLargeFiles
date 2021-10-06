@@ -25,3 +25,8 @@ Downloading the file results in the reassembled original file being put in the d
 ### Github
 1. Download the `SplitLargeFiles.plugin.js` file
 2. Drag it into your BetterDiscord plugins directory
+
+## Frequently Asked Questions and Common Problems
+- Problem: Discord crashes when I try to upload a large file.
+
+  - Solution: Try uploading a different file of similar size. If the new file works, there is something wrong with the original file. You can try moving it somewhere else and see if it works. If the new file doesn't work, contact me and I will take a bug report.
