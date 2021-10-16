@@ -1,7 +1,7 @@
 "use strict";
 
 module.exports = (Plugin, Library) => {
-    const {Logger, Patcher, WebpackModules, DiscordAPI, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings} = Library;
+    const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings} = Library;
     const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
 
@@ -273,7 +273,7 @@ module.exports = (Plugin, Library) => {
 
             this.messageCreate = e => {
                 // Disregard if not in same channel or in process of being sent
-                if (e.channelId !== DiscordAPI.currentChannel?.discordObject.id) {
+                if (e.channelId !== this.getCurrentChannel()?.id) {
                     return;
                 }
                 this.lastMessageCreatedId = e.message.id;
@@ -296,7 +296,7 @@ module.exports = (Plugin, Library) => {
                     BdApi.showToast("Downloadables refreshed", {type: "success"});
                 }}));
                 // Due to issues with the permissions API only allow users to delete their own download fragments
-                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === DiscordAPI.currentUser?.discordObject.id);
+                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === this.getCurrentUser().id);
                 if (incomplete) {
                     ret.props.children.splice(6, 0, DiscordContextMenu.buildMenuItem({label: "Delete Download Fragments", danger: true, action: () => {
                         this.deleteDownload(incomplete);
@@ -306,7 +306,7 @@ module.exports = (Plugin, Library) => {
             });
 
             Patcher.after(this.textChannelContextMenu, "default", (_, [arg], ret) => {
-                if (arg.channel.id === DiscordAPI.currentChannel?.discordObject.id) {
+                if (arg.channel.id === this.getCurrentChannel().id) {
                     ret.props.children.splice(1, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
                         this.findAvailableDownloads();
                         BdApi.showToast("Downloadables refreshed", {type: "success"});
@@ -317,7 +317,7 @@ module.exports = (Plugin, Library) => {
             // Handle deletion of part of file to delete all other parts either by user or automod
             this.messageDelete = e => {
                 // Disregard if not in same channel
-                if (e.channelId !== DiscordAPI.currentChannel?.discordObject.id) {
+                if (e.channelId !== this.getCurrentChannel()?.id) {
                     return;
                 }
                 const download = this.registeredDownloads.find(element => element.messages.find(message => message.id == e.id));
@@ -401,7 +401,7 @@ module.exports = (Plugin, Library) => {
             }
 
             // Built-in buffer, otherwise file upload fails
-            return this.fileCheckMod.maxFileSize(DiscordAPI.currentGuild, true) - 1000;
+            return this.fileCheckMod.maxFileSize(this.getCurrentGuild(), true) - 1000;
         }
 
         // Looks through current messages to see which ones have (supposedly) complete .dlfc files and make a list of them
@@ -410,15 +410,15 @@ module.exports = (Plugin, Library) => {
         findAvailableDownloads() {
             this.registeredDownloads = [];
             this.incompleteDownloads = [];
-            for (const message of DiscordAPI.currentChannel?.messages) {
+            for (const message of this.getChannelMessages(this.getCurrentChannel()?.id) ?? []) {
                 // If object already searched with nothing then skip
-                if (message.discordObject.noDLFC) {
+                if (message.noDLFC) {
                     continue;
                 }
 
                 // Check for DLFC files
                 let foundDLFCAttachment = false;
-                for (const attachment of message.discordObject.attachments) {
+                for (const attachment of message.attachments) {
                     // Make sure file (somewhat) follows correct format, if not then skip
                     if (isNaN(parseInt(attachment.filename)) || !attachment.filename.endsWith(".dlfc")) {
                         continue;
@@ -437,7 +437,7 @@ module.exports = (Plugin, Library) => {
                         // Create new download
                         this.registeredDownloads.unshift({
                             filename: realName,
-                            owner: message.discordObject.author.id,
+                            owner: message.author.id,
                             urls: [attachment.url],
                             messages: [{id: message.id, date: message.timestamp}],
                             foundParts: new Set([parseInt(attachment.filename)]),
@@ -448,7 +448,7 @@ module.exports = (Plugin, Library) => {
 
                 // Tag object if no attachments found to prevent unneeded repeat scans
                 if (!foundDLFCAttachment) {
-                    message.discordObject.noDLFC = true;
+                    message.noDLFC = true;
                 }
             }
 
@@ -569,20 +569,43 @@ module.exports = (Plugin, Library) => {
         // Excludes a message that was already deleted
         deleteDownload(download, excludeMessage) {
             BdApi.showToast(`Deleting chunks (1 chunk/${settings.deletionDelay} seconds)`, {type: "success"});
-            let delayCount = 0;
-            for (const message of DiscordAPI.currentChannel?.messages) {
-                const downloadMessage = download.messages.find(dMessage => dMessage.id == message.discordObject.id);
+            let delayCount = 1;
+            for (const message of this.getChannelMessages(this.getCurrentChannel().id)) {
+                const downloadMessage = download.messages.find(dMessage => dMessage.id == message.id);
                 if (downloadMessage) {
-                    if (excludeMessage && message.discordObject.id === excludeMessage.id) {
+                    if (excludeMessage && message.id === excludeMessage.id) {
                         continue;
                     }
-                    this.setMessageVisibility(message.discordObject.id, true);
+                    this.setMessageVisibility(message.id, true);
                     const downloadMessageIndex = download.messages.indexOf(downloadMessage);
                     download.messages.splice(downloadMessageIndex, 1);
-                    setTimeout(() => message.delete(), delayCount * settings.deletionDelay * 1000);
+                    setTimeout(() => this.deleteMessage(message), delayCount * settings.deletionDelay * 1000);
                     delayCount += 1;
                 }
             }
+        }
+
+        getCurrentChannel() {
+            return BdApi.findModuleByProps("getChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
+        }
+
+        getChannelMessages(channelId) {
+            if (!channelId) {
+                return null;
+            }
+            return BdApi.findModuleByProps("getMessages").getMessages(channelId)._array;
+        }
+
+        getCurrentGuild() {
+            return BdApi.findModuleByProps("getGuild").getGuild(BdApi.findModuleByProps("getGuildId").getGuildId()) ?? null;
+        }
+
+        getCurrentUser() {
+            return BdApi.findModuleByProps("getCurrentUser").getCurrentUser();
+        }
+
+        deleteMessage(message) {
+            BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage").deleteMessage(message.channel_id, message.id, false);
         }
 
         onStop() {
