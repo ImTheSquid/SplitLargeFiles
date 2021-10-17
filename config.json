@@ -7,13 +7,14 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.3",
+        "version": "1.4",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "Consistency & Library Compatibility", "items": ["Made sure all file deletions happen at the correct times", "Removed all references to DiscordAPI to keep ZLib compatibility"]}
+        {"title": "Power to the Mods", "items": ["Added ability for users with the \"Manage Messages\" permission to delete chunk files automatically"]},
+        {"title": "Cleanup", "items": ["Made sure all dispatchers are unubscribed from on stop"]}
     ],
     "main": "index.js"
 }

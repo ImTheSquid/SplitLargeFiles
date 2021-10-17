@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.3","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Consistency & Library Compatibility","items":["Made sure all file deletions happen at the correct times","Removed all references to DiscordAPI to keep ZLib compatibility"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.4","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Power to the Mods","items":["Added ability for users with the \"Manage Messages\" permission to delete chunk files automatically"]},{"title":"Cleanup","items":["Made sure all dispatchers are unubscribed from on stop"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -346,9 +346,8 @@ module.exports = (() => {
                     this.findAvailableDownloads();
                     BdApi.showToast("Downloadables refreshed", {type: "success"});
                 }}));
-                // Due to issues with the permissions API only allow users to delete their own download fragments
-                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === this.getCurrentUser().id);
-                if (incomplete) {
+                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id));
+                if (incomplete && this.canDeleteDownload(download)) {
                     ret.props.children.splice(6, 0, DiscordContextMenu.buildMenuItem({label: "Delete Download Fragments", danger: true, action: () => {
                         this.deleteDownload(incomplete);
                         this.findAvailableDownloads();
@@ -372,7 +371,7 @@ module.exports = (() => {
                     return;
                 }
                 const download = this.registeredDownloads.find(element => element.messages.find(message => message.id == e.id));
-                if (download) {
+                if (download && this.canDeleteDownload(download)) {
                     this.deleteDownload(download, e.id);
                 }
                 this.findAvailableDownloads();
@@ -636,6 +635,10 @@ module.exports = (() => {
             }
         }
 
+        canDeleteDownload(download) {
+            return download.owner === this.getCurrentUser().id || this.canManageMessages();
+        }
+
         getCurrentChannel() {
             return BdApi.findModuleByProps("getChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
         }
@@ -655,6 +658,15 @@ module.exports = (() => {
             return BdApi.findModuleByProps("getCurrentUser").getCurrentUser();
         }
 
+        canManageMessages() {
+            const currentChannel = this.getCurrentChannel();
+            if (!currentChannel) {
+                return false;
+            }
+            // Convert permissions big int into bool using falsy coercion
+            return !!(BdApi.findModuleByProps("computePermissions").computePermissions(currentChannel) & 0x2000n);
+        }
+
         deleteMessage(message) {
             BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage").deleteMessage(message.channel_id, message.id, false);
         }
@@ -663,6 +675,7 @@ module.exports = (() => {
             Patcher.unpatchAll();
             Dispatcher.unsubscribe("MESSAGE_CREATE", this.messageCreate);
             Dispatcher.unsubscribe("CHANNEL_SELECT", this.channelSelect);
+            Dispatcher.unsubscribe("MESSAGE_DELETE", this.messageDelete);
         }
     };
 

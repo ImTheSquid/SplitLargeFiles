@@ -295,9 +295,8 @@ module.exports = (Plugin, Library) => {
                     this.findAvailableDownloads();
                     BdApi.showToast("Downloadables refreshed", {type: "success"});
                 }}));
-                // Due to issues with the permissions API only allow users to delete their own download fragments
-                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id) && download.owner === this.getCurrentUser().id);
-                if (incomplete) {
+                const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id));
+                if (incomplete && this.canDeleteDownload(download)) {
                     ret.props.children.splice(6, 0, DiscordContextMenu.buildMenuItem({label: "Delete Download Fragments", danger: true, action: () => {
                         this.deleteDownload(incomplete);
                         this.findAvailableDownloads();
@@ -321,7 +320,7 @@ module.exports = (Plugin, Library) => {
                     return;
                 }
                 const download = this.registeredDownloads.find(element => element.messages.find(message => message.id == e.id));
-                if (download) {
+                if (download && this.canDeleteDownload(download)) {
                     this.deleteDownload(download, e.id);
                 }
                 this.findAvailableDownloads();
@@ -585,6 +584,10 @@ module.exports = (Plugin, Library) => {
             }
         }
 
+        canDeleteDownload(download) {
+            return download.owner === this.getCurrentUser().id || this.canManageMessages();
+        }
+
         getCurrentChannel() {
             return BdApi.findModuleByProps("getChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
         }
@@ -604,6 +607,15 @@ module.exports = (Plugin, Library) => {
             return BdApi.findModuleByProps("getCurrentUser").getCurrentUser();
         }
 
+        canManageMessages() {
+            const currentChannel = this.getCurrentChannel();
+            if (!currentChannel) {
+                return false;
+            }
+            // Convert permissions big int into bool using falsy coercion
+            return !!(BdApi.findModuleByProps("computePermissions").computePermissions(currentChannel) & 0x2000n);
+        }
+
         deleteMessage(message) {
             BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage").deleteMessage(message.channel_id, message.id, false);
         }
@@ -612,6 +624,7 @@ module.exports = (Plugin, Library) => {
             Patcher.unpatchAll();
             Dispatcher.unsubscribe("MESSAGE_CREATE", this.messageCreate);
             Dispatcher.unsubscribe("CHANNEL_SELECT", this.channelSelect);
+            Dispatcher.unsubscribe("MESSAGE_DELETE", this.messageDelete);
         }
     };
 
