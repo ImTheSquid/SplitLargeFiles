@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.4","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Power to the Mods","items":["Added ability for users with the \"Manage Messages\" permission to delete chunk files automatically"]},{"title":"Cleanup","items":["Made sure all dispatchers are unubscribed from on stop"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.4.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Sneaky Sneaky","items":["Bypassed additional file size checks added by Discord"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -233,7 +233,7 @@ module.exports = (() => {
     class SplitLargeFiles extends Plugin {
         onStart() {
             // Set globals
-            this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge");
+            this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge", "maxFileSize");
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
             this.contextMenuMod = WebpackModules.getByProps("useContextMenuMessage");
             this.messageContextMenu = WebpackModules.find(mod => mod.default?.displayName === "MessageContextMenu");
@@ -253,6 +253,14 @@ module.exports = (() => {
             Patcher.instead(this.fileCheckMod, "anyFileTooLarge", (_, __, ___) => {
                 return false;
             });
+
+            Patcher.instead(this.fileCheckMod, "uploadSumTooLarge", (_, __, ___) => {
+                return false;
+            })
+
+            Patcher.instead(this.fileCheckMod, "getUploadFileSizeSum", (_, __, ___) => {
+                return 0;
+            })
 
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
             Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {

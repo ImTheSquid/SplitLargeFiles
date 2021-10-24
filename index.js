@@ -182,7 +182,7 @@ module.exports = (Plugin, Library) => {
     class SplitLargeFiles extends Plugin {
         onStart() {
             // Set globals
-            this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge");
+            this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge", "maxFileSize");
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
             this.contextMenuMod = WebpackModules.getByProps("useContextMenuMessage");
             this.messageContextMenu = WebpackModules.find(mod => mod.default?.displayName === "MessageContextMenu");
@@ -202,6 +202,14 @@ module.exports = (Plugin, Library) => {
             Patcher.instead(this.fileCheckMod, "anyFileTooLarge", (_, __, ___) => {
                 return false;
             });
+
+            Patcher.instead(this.fileCheckMod, "uploadSumTooLarge", (_, __, ___) => {
+                return false;
+            })
+
+            Patcher.instead(this.fileCheckMod, "getUploadFileSizeSum", (_, __, ___) => {
+                return 0;
+            })
 
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
             Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {
