@@ -7,13 +7,13 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.4.1",
+        "version": "1.4.2",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "Sneaky Sneaky", "items": ["Bypassed additional file size checks added by Discord"]}
+        {"title": "Channel Fixes", "items": ["Fixed issue where channel data failed to be fetched properly"]}
     ],
     "main": "index.js"
 }

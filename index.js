@@ -181,6 +181,7 @@ module.exports = (Plugin, Library) => {
 
     class SplitLargeFiles extends Plugin {
         onStart() {
+
             // Set globals
             this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge", "maxFileSize");
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
@@ -417,6 +418,7 @@ module.exports = (Plugin, Library) => {
         findAvailableDownloads() {
             this.registeredDownloads = [];
             this.incompleteDownloads = [];
+            
             for (const message of this.getChannelMessages(this.getCurrentChannel()?.id) ?? []) {
                 // If object already searched with nothing then skip
                 if (message.noDLFC) {
@@ -597,7 +599,7 @@ module.exports = (Plugin, Library) => {
         }
 
         getCurrentChannel() {
-            return BdApi.findModuleByProps("getChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
+            return BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
         }
 
         getChannelMessages(channelId) {
