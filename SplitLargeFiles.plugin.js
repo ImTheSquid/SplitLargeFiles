@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.4.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Sneaky Sneaky","items":["Bypassed additional file size checks added by Discord"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.4.2","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Channel Fixes","items":["Fixed issue where channel data failed to be fetched properly"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -468,6 +468,7 @@ module.exports = (() => {
         findAvailableDownloads() {
             this.registeredDownloads = [];
             this.incompleteDownloads = [];
+            
             for (const message of this.getChannelMessages(this.getCurrentChannel()?.id) ?? []) {
                 // If object already searched with nothing then skip
                 if (message.noDLFC) {
@@ -648,7 +649,7 @@ module.exports = (() => {
         }
 
         getCurrentChannel() {
-            return BdApi.findModuleByProps("getChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
+            return BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
         }
 
         getChannelMessages(channelId) {
