@@ -21,6 +21,17 @@ module.exports = (Plugin, Library) => {
         return true;
     }
 
+    // Converts a file name into its name and extension
+    const convertFilenameToComponents = name => {
+        const splitData = name.split(".");
+        let reconstructedName = "";
+        for (let i = 0; i < splitData.length - 1; i++) {
+            reconstructedName += splitData[i];
+        }
+
+        return [reconstructedName, splitData[splitData.length - 1]];
+    }
+
     const downloadFiles = download => {
         const https = require("https");
         const os = require("os");
@@ -86,10 +97,41 @@ module.exports = (Plugin, Library) => {
                 // Save file to valid directory and open it if required
                 BdApi.showToast("File reassembled successfully", {type: "success"});
                 let saveDir = settings.fileSavePath;
-                if (!fs.lstatSync(settings.fileSavePath).isDirectory()) {
+                try {
+                    fs.lstatSync(saveDir).isDirectory()
+                } catch (e) {
                     saveDir = defaultSettingsData.fileSavePath;
                 }
-                fs.copyFileSync(path.join(tempFolder, `${download.filename}`), path.join(saveDir, `${download.filename}`));
+                // Try not to overwrite any currently existing files
+                // Number of times to attempt to put [filename] ([number]).[extension] before defaulting to a random ID
+                const MAX_SOFT_COPY_ATTEMPTS = 256;
+                const [filename, extension] = convertFilenameToComponents(download.filename);
+                let appendValue = "";
+                // See if file exists, if it does then go through loop to try not to overwrite it
+                try {
+                    fs.lstatSync(path.join(saveDir, `${download.filename}`)).isFile()
+
+                    let foundFreeName = false;
+                    for (let copyAttempt = 1; copyAttempt - 1 < MAX_SOFT_COPY_ATTEMPTS; copyAttempt++) {
+                        try {
+                            fs.lstatSync(path.join(saveDir, `${filename} (${copyAttempt}).${extension}`)).isFile()
+                        } catch (e) {
+                            if (e.code === "ENOENT") {
+                                appendValue = ` (${copyAttempt})`;
+                                foundFreeName = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!foundFreeName) {
+                        appendValue = ` ${id}`
+                    }
+                } catch {}
+
+                fs.copyFileSync(path.join(tempFolder, `${download.filename}`), path.join(saveDir, `${filename}${appendValue}.${extension}`));
+
+                // Clean up
                 fs.rmdirSync(tempFolder, {recursive: true});
                 if (settings.openFileAfterSave) {
                     require("electron").shell.showItemInFolder(path.join(saveDir, `${download.filename}`));
@@ -187,7 +229,8 @@ module.exports = (Plugin, Library) => {
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
             this.contextMenuMod = WebpackModules.getByProps("useContextMenuMessage");
             this.messageContextMenu = WebpackModules.find(mod => mod.default?.displayName === "MessageContextMenu");
-            this.textChannelContextMenu = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu");
+            // Discord created multiple context menu components with the same name for some reason so find and patch all of them
+            this.textChannelContextMenus = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu", false);
 
             // Load settings data
             reloadSettings();
@@ -293,7 +336,7 @@ module.exports = (Plugin, Library) => {
 
             this.channelSelect = _ => {
                 // Wait a bit to allow DOM to update before refreshing
-                setTimeout(() => this.findAvailableDownloads(), 100);
+                setTimeout(() => this.findAvailableDownloads(), 200);
             };
 
             Dispatcher.subscribe("CHANNEL_SELECT", this.channelSelect);
@@ -313,14 +356,16 @@ module.exports = (Plugin, Library) => {
                 }
             });
 
-            Patcher.after(this.textChannelContextMenu, "default", (_, [arg], ret) => {
-                if (arg.channel.id === this.getCurrentChannel().id) {
-                    ret.props.children.splice(1, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
-                        this.findAvailableDownloads();
-                        BdApi.showToast("Downloadables refreshed", {type: "success"});
-                    }}));
-                }
-            });
+            for (const contextMenu of this.textChannelContextMenus) {
+                Patcher.after(contextMenu, "default", (_, [arg], ret) => {
+                    if (arg.channel.id === this.getCurrentChannel()?.id) {
+                        ret.props.children.splice(1, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
+                            this.findAvailableDownloads();
+                            BdApi.showToast("Downloadables refreshed", {type: "success"});
+                        }}));
+                    }
+                });
+            }
 
             // Handle deletion of part of file to delete all other parts either by user or automod
             this.messageDelete = e => {
