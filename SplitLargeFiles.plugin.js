@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.0","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Channel and File Fixes","items":["Fixed issue where channel context menu stopped being patched","Added code to reduce the likelyhood of a file being overwritten by a reassembled download"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Multi-Uploader Support","items":["Added support for the new multi-uploader system"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -325,8 +325,7 @@ module.exports = (() => {
                     return;
                 }
                 // Calculate chunks required
-                const numChunks = Math.ceil(file.size / this.maxFileUploadSize());
-                const numChunksWithHeaders = Math.ceil(file.size / (this.maxFileUploadSize() - 4));
+                const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
                 // Don't do anything if no changes needed
                 if (numChunks == 1) {
                     original(...args);
@@ -337,37 +336,46 @@ module.exports = (() => {
                 }
 
                 BdApi.showToast("Generating file chunks...", {type: "info"});
+                this.uploadLargeFiles([file], channelId, n);
+            });
 
-                // Convert file to bytes
-                file.arrayBuffer().then(buffer => {
-                    const fileBytes = new Uint8Array(buffer);
+            Patcher.instead(this.fileUploadMod, "uploadFiles", (_, args, original) => {
+                const [channelId, files, n, message, stickers] = args;
 
-                    // Write files with leading bit to determine order
-                    // Upload new chunked files
-                    const fileList = [];
-                    for (let chunk = 0; chunk < numChunksWithHeaders; chunk++) {
-                        // Get an offset with size 
-                        const baseOffset = chunk * (this.maxFileUploadSize() - 4);
-                        // Write header: "DF" (discord file) then protocol version then chunk number then total chunk count
-                        const headerBytes = new Uint8Array(4);
-                        headerBytes.set([0xDF, 0x00, chunk & 0xFF, numChunks & 0xFF]);
-                        // Slice original file with room for header
-                        const bytesToWrite = fileBytes.slice(baseOffset, baseOffset + this.maxFileUploadSize() - 4);
-                        // Add file to array
-                        fileList.push(new File([concatTypedArrays(headerBytes, bytesToWrite)], `${chunk}-${numChunks - 1}_${file.name}.dlfc`));
+                // Make sure we can upload at all
+                if (this.maxFileUploadSize() === 0) {
+                    BdApi.showToast("Failed to get max file upload size.", {type: "error"});
+                    return;
+                }
+
+                // Iterate over files to see which ones are oversized and move them to an array if they are
+                let oversizedFiles = [];
+                for (let fIndex = 0; fIndex < files.length; fIndex++) {
+                    const file = files[fIndex].item.file;
+                    // Calculate chunks required
+                    const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
+                    // Don't do anything if no changes needed
+                    if (numChunks == 1) {
+                        continue;
+                    } else if (numChunksWithHeaders > 255) { // Check to make sure the number of files when chunked with header is not greater than 255 otherwise fail
+                        BdApi.showToast("File size exceeds max chunk count of 255.", {type: "error"});
+                        return;
                     }
 
-                    const batchSize = settings.uploadBatchSize;
-                    for (let i = 0; i < Math.ceil(fileList.length / batchSize); ++i) {
-                        setTimeout(() => this.fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1000);
-                    }
-                    // Upload through built-in batch system
-                    
-                    BdApi.showToast(`All files uploading (${batchSize} chunk${batchSize == 1 ? "" : "s"}/${settings.uploadDelay} seconds)`, {type: "success"});
-                }).catch(err => {
-                    Logger.error(err);
-                    BdApi.showToast("Failed to read file, please try again later.", {type: "error"})
-                });
+                    // File is oversized, remove it from the array and add it to oversized list
+                    files.splice(fIndex, 1);
+                    oversizedFiles.push(file);
+                    // Adjust index to be consistent with new array positioning
+                    fIndex--;
+                }
+
+                // Call original function with modified arguments
+                original(channelId, files, n, message, stickers);
+
+                // Use batch uploader for chunk files
+                if (oversizedFiles.length > 0) {
+                    this.uploadLargeFiles(oversizedFiles, channelId, n, oversizedFiles.length > 1);
+                }
             });
 
             /**
@@ -444,6 +452,53 @@ module.exports = (() => {
                 BdApi.showToast("Downloadables refreshed", {type: "success"});
                 this.findAvailableDownloads()
             }, 10000);
+        }
+
+        // Splits and uploads a large file
+        // Batch uploading should be disabled when multiple files need to be uploaded to prevent API spam
+        uploadLargeFiles(files, channelId, n, disableBatch=false) {
+            BdApi.showToast("Generating file chunks...", {type: "info"});
+            const batchSize = disableBatch ? 1 : settings.uploadBatchSize;
+            
+            for (const file of files) {
+                // Convert file to bytes
+                file.arrayBuffer().then(buffer => {
+                    const fileBytes = new Uint8Array(buffer);
+
+                    // Calculate chunks required
+                    const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
+
+                    // Write files with leading bit to determine order
+                    // Upload new chunked files
+                    const fileList = [];
+                    for (let chunk = 0; chunk < numChunksWithHeaders; chunk++) {
+                        // Get an offset with size 
+                        const baseOffset = chunk * (this.maxFileUploadSize() - 4);
+                        // Write header: "DF" (discord file) then protocol version then chunk number then total chunk count
+                        const headerBytes = new Uint8Array(4);
+                        headerBytes.set([0xDF, 0x00, chunk & 0xFF, numChunks & 0xFF]);
+                        // Slice original file with room for header
+                        const bytesToWrite = fileBytes.slice(baseOffset, baseOffset + this.maxFileUploadSize() - 4);
+                        // Add file to array
+                        fileList.push(new File([concatTypedArrays(headerBytes, bytesToWrite)], `${chunk}-${numChunks - 1}_${file.name}.dlfc`));
+                    }
+
+                    // Upload through built-in batch system
+                    for (let i = 0; i < Math.ceil(fileList.length / batchSize); ++i) {
+                        setTimeout(() => this.fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1000);
+                    }
+                }).catch(err => {
+                    Logger.error(err);
+                    BdApi.showToast("Failed to read file, please try again later.", {type: "error"})
+                });
+            }
+
+            BdApi.showToast(`All files uploading (${batchSize} chunk${batchSize == 1 ? "" : "s"}/${settings.uploadDelay} seconds${disableBatch ? ", batch disabled" : ""})`, {type: "success"});
+        }
+
+        // Returns numChunks and numChunksWithHeaders
+        calcNumChunks(file) {
+            return [Math.ceil(file.size / this.maxFileUploadSize()), Math.ceil(file.size / (this.maxFileUploadSize() - 4))]
         }
 
         // Create the settings panel

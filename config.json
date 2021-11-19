@@ -7,13 +7,13 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.5.0",
+        "version": "1.5.1",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "Channel and File Fixes", "items": ["Fixed issue where channel context menu stopped being patched", "Added code to reduce the likelyhood of a file being overwritten by a reassembled download"]}
+        {"title": "Multi-Uploader Support", "items": ["Added support for the new multi-uploader system"]}
     ],
     "main": "index.js"
 }
