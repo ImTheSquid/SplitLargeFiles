@@ -318,8 +318,10 @@ module.exports = (Plugin, Library) => {
                     fIndex--;
                 }
 
-                // Call original function with modified arguments
-                original(channelId, files, n, message, stickers);
+                // Call original function with modified arguments UNLESS there is no other content
+                if (files.length > 0 || message.content.length > 0 || stickers.stickerIds.length > 0) {
+                    original(channelId, files, n, message, stickers);
+                }
 
                 // Use batch uploader for chunk files
                 if (oversizedFiles.length > 0) {

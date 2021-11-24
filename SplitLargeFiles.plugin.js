@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Multi-Uploader Support","items":["Added support for the new multi-uploader system"]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.3","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Multi-Uploader Fixes","items":["Fixed error when only uploading large files through new uploader"]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -369,8 +369,10 @@ module.exports = (() => {
                     fIndex--;
                 }
 
-                // Call original function with modified arguments
-                original(channelId, files, n, message, stickers);
+                // Call original function with modified arguments UNLESS there is no other content
+                if (files.length > 0 || message.content.length > 0 || stickers.stickerIds.length > 0) {
+                    original(channelId, files, n, message, stickers);
+                }
 
                 // Use batch uploader for chunk files
                 if (oversizedFiles.length > 0) {
