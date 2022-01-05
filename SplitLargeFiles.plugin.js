@@ -52,6 +52,8 @@ module.exports = (() => {
         stop() {}
     } : (([Plugin, Api]) => {
         const plugin = (Plugin, Library) => {
+    "use strict";
+
     const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, DiscordContextMenu, Settings} = Library;
     const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
     const {Dispatcher, React, ReactDOM} = DiscordModules;
@@ -283,6 +285,18 @@ module.exports = (() => {
             // Discord created multiple context menu components with the same name for some reason so find and patch all of them
             this.textChannelContextMenus = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu", false);
 
+            // Utility modules
+            this.channelMod = BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel");
+            this.messagesMod = BdApi.findModuleByProps("getMessages");
+            this.guildMod = BdApi.findModuleByProps("getGuild");
+            this.guildIDMod = BdApi.findModuleByProps("getGuildId");
+            this.userMod = BdApi.findModuleByProps("getCurrentUser");
+            this.permissionsMod = BdApi.findModuleByProps("computePermissions");
+            this.deleteMod = BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage");
+
+            // Array of currently mounted React components that will need to be unmounted whenever the channel changes
+            this.mountedNodes = [];
+
             // Load settings data
             reloadSettings();
 
@@ -396,6 +410,11 @@ module.exports = (() => {
             Dispatcher.subscribe("MESSAGE_CREATE", this.messageCreate);
 
             this.channelSelect = _ => {
+                // Clear all previously-mounted React components to prevent memory leaks
+                for (const node of this.mountedNodes) {
+                    ReactDOM.unmountComponentAtNode(node);
+                }
+
                 // Wait a bit to allow DOM to update before refreshing
                 setTimeout(() => this.findAvailableDownloads(), 200);
             };
@@ -519,17 +538,7 @@ module.exports = (() => {
 
                     new Switch("Open File Location After Save", "Open the reassembled file's location after it is saved.", settings.openFileAfterSave, newVal => { 
                         settings.openFileAfterSave = newVal; 
-                    }),
-
-                    new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
-                        " If you plan on uploading VERY large files you should set this value high to avoid API spam.", 
-                        validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.deletionDelay, newVal => {
-                            // Make sure value is in bounds
-                            if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
-                                newVal = validActionDelays[0];
-                            }
-                            settings.deletionDelay = newVal;
-                        }, {markers: validActionDelays, stickToMarkers: true})
+                    })
                 ),
                 new SettingGroup("Uploads").append(
                     new Slider("Chunk File Upload Batch Size", "Number of chunk files to queue per upload operation." + 
@@ -550,6 +559,16 @@ module.exports = (() => {
                                 newVal = validActionDelays[0];
                             }
                             settings.uploadDelay = newVal;
+                        }, {markers: validActionDelays, stickToMarkers: true}),
+
+                    new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
+                        " If you plan on deleting VERY large files you should set this value high to avoid API spam.", 
+                        validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.deletionDelay, newVal => {
+                            // Make sure value is in bounds
+                            if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
+                                newVal = validActionDelays[0];
+                            }
+                            settings.deletionDelay = newVal;
                         }, {markers: validActionDelays, stickToMarkers: true})
                 )
             ).getElement();
@@ -699,6 +718,9 @@ module.exports = (() => {
             newIconDownloadContainer.className = "iconChunkDownloader";
             attachment.appendChild(newIconDownloadContainer);
 
+            // Keep references to nodes that have components attached that need to be unmounted on channel change
+            this.mountedNodes.concat([newIconDownloadContainer, namedLinkWrapper]);
+
             ReactDOM.render(React.createElement(IconDownloadLink, {classes: iconDownloadLink.className, svgClasses: iconDownloadLink.children[0].className.baseVal, download: download}), newIconDownloadContainer);
             ReactDOM.render(React.createElement(NamedDownloadLink, {classes: namedLinkWrapper.children[0].className, download: download}), namedLinkWrapper);
         }
@@ -752,22 +774,22 @@ module.exports = (() => {
         }
 
         getCurrentChannel() {
-            return BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel").getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
+            return this.channelMod.getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
         }
 
         getChannelMessages(channelId) {
             if (!channelId) {
                 return null;
             }
-            return BdApi.findModuleByProps("getMessages").getMessages(channelId)._array;
+            return this.messagesMod.getMessages(channelId)._array;
         }
 
         getCurrentGuild() {
-            return BdApi.findModuleByProps("getGuild").getGuild(BdApi.findModuleByProps("getGuildId").getGuildId()) ?? null;
+            return this.guildMod.getGuild(this.guildIDMod.getGuildId()) ?? null;
         }
 
         getCurrentUser() {
-            return BdApi.findModuleByProps("getCurrentUser").getCurrentUser();
+            return this.userMod.getCurrentUser();
         }
 
         canManageMessages() {
@@ -776,11 +798,11 @@ module.exports = (() => {
                 return false;
             }
             // Convert permissions big int into bool using falsy coercion
-            return !!(BdApi.findModuleByProps("computePermissions").computePermissions(currentChannel) & 0x2000n);
+            return !!(this.permissionsMod.computePermissions(currentChannel) & 0x2000n);
         }
 
         deleteMessage(message) {
-            BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage").deleteMessage(message.channel_id, message.id, false);
+            this.deleteMod.deleteMessage(message.channel_id, message.id, false);
         }
 
         onStop() {
