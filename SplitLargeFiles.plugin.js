@@ -719,7 +719,7 @@ module.exports = (() => {
             attachment.appendChild(newIconDownloadContainer);
 
             // Keep references to nodes that have components attached that need to be unmounted on channel change
-            this.mountedNodes.concat([newIconDownloadContainer, namedLinkWrapper]);
+            this.mountedNodes.push(newIconDownloadContainer, namedLinkWrapper);
 
             ReactDOM.render(React.createElement(IconDownloadLink, {classes: iconDownloadLink.className, svgClasses: iconDownloadLink.children[0].className.baseVal, download: download}), newIconDownloadContainer);
             ReactDOM.render(React.createElement(NamedDownloadLink, {classes: namedLinkWrapper.children[0].className, download: download}), namedLinkWrapper);
