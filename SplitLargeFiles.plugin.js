@@ -810,6 +810,11 @@ module.exports = (() => {
             Dispatcher.unsubscribe("MESSAGE_CREATE", this.messageCreate);
             Dispatcher.unsubscribe("CHANNEL_SELECT", this.channelSelect);
             Dispatcher.unsubscribe("MESSAGE_DELETE", this.messageDelete);
+
+            // Clear all previously-mounted React components to prevent memory leaks
+            for (const node of this.mountedNodes) {
+                ReactDOM.unmountComponentAtNode(node);
+            }
         }
     };
 
