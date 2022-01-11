@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.4","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Performance Fixes","items":["Fixed memory leaks and refactored laggy code."]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.5","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Update Fixes","type":"fixed","items":["Fixed issues caused by the recent Discord update."]},{"title":"Still Broken","type":"progress","items":["Context menu-based refreshing is still broken, will be fixed once a consistent way to patch context menus is found."]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -280,14 +280,15 @@ module.exports = (() => {
             // Set globals
             this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge", "maxFileSize");
             this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
-            this.contextMenuMod = WebpackModules.getByProps("useContextMenuMessage");
-            this.messageContextMenu = WebpackModules.find(mod => mod.default?.displayName === "MessageContextMenu");
+            
+            // Context menus are currently broken, waiting for a fix in Zere's
+            // this.messageContextMenu = WebpackModules.find(mod => mod.default?.displayName === "MessageContextMenu");
             // Discord created multiple context menu components with the same name for some reason so find and patch all of them
-            this.textChannelContextMenus = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu", false);
+            // this.textChannelContextMenus = WebpackModules.find(mod => mod.default?.displayName === "ChannelListTextChannelContextMenu", false);
 
             // Utility modules
             this.channelMod = BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel");
-            this.messagesMod = BdApi.findModuleByProps("getMessages");
+            this.messagesMod = BdApi.findModuleByProps("hasCurrentUserSentMessage", "getMessage");
             this.guildMod = BdApi.findModuleByProps("getGuild");
             this.guildIDMod = BdApi.findModuleByProps("getGuildId");
             this.userMod = BdApi.findModuleByProps("getCurrentUser");
@@ -422,7 +423,7 @@ module.exports = (() => {
             Dispatcher.subscribe("CHANNEL_SELECT", this.channelSelect);
 
             // Manual refresh button in both channel and message menus
-            Patcher.after(this.messageContextMenu, "default", (_, [arg], ret) => {
+            /*Patcher.after(this.messageContextMenu, "default", (_, [arg], ret) => {
                 ret.props.children.splice(4, 0, DiscordContextMenu.buildMenuItem({type: "separator"}), DiscordContextMenu.buildMenuItem({label: "Refresh Downloadables", action: () => { 
                     this.findAvailableDownloads();
                     BdApi.showToast("Downloadables refreshed", {type: "success"});
@@ -445,7 +446,7 @@ module.exports = (() => {
                         }}));
                     }
                 });
-            }
+            }*/
 
             // Handle deletion of part of file to delete all other parts either by user or automod
             this.messageDelete = e => {
@@ -466,7 +467,6 @@ module.exports = (() => {
              * COMPLETION
              */
 
-            Logger.log("Initialization complete");
             BdApi.showToast("Waiting for BetterDiscord to load before refreshing downloadables...", {type: "info"});
             // Wait for DOM to render before trying to find downloads
             setTimeout(() => {

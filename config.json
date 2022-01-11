@@ -7,13 +7,14 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.5.4",
+        "version": "1.5.5",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "Performance Fixes", "items": ["Fixed memory leaks and refactored laggy code."]}
+        {"title": "Update Fixes", "type": "fixed", "items": ["Fixed issues caused by the recent Discord update."]},
+        {"title": "Still Broken", "type": "progress", "items": ["Context menu-based refreshing is still broken, will be fixed once a consistent way to patch context menus is found."]}
     ],
     "main": "index.js"
 }
