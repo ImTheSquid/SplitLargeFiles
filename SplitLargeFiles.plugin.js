@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.6","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Update Fixes","items":["Re-added context menu support for channels and individual messages."]}],"main":"index.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.5.7","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Seizing Opportunity","items":["Split Large Files now correctly detects if a server has an increased upload size cap and utilizes it."]}],"main":"index.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -56,7 +56,7 @@ module.exports = (() => {
 
     const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, ContextMenu, Settings} = Library;
     const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
-    const {Dispatcher, React, ReactDOM} = DiscordModules;
+    const {Dispatcher, React, ReactDOM, SelectedChannelStore, SelectedGuildStore} = DiscordModules;
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
         var c = new (a.constructor)(a.length + b.length);
@@ -445,6 +445,8 @@ module.exports = (() => {
                 });
             });
 
+            // TODO: Patch DMUserContextMenu
+
             // Handle deletion of part of file to delete all other parts either by user or automod
             this.messageDelete = e => {
                 // Disregard if not in same channel
@@ -578,7 +580,7 @@ module.exports = (() => {
             }
 
             // Built-in buffer, otherwise file upload fails
-            return this.fileCheckMod.maxFileSize(this.getCurrentGuild(), true) - 1000;
+            return this.fileCheckMod.maxFileSize(SelectedGuildStore.getGuildId(), true) - 1000;
         }
 
         // Looks through current messages to see which ones have (supposedly) complete .dlfc files and make a list of them
@@ -771,7 +773,7 @@ module.exports = (() => {
         }
 
         getCurrentChannel() {
-            return this.channelMod.getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
+            return this.channelMod.getChannel(SelectedChannelStore.getChannelId()) ?? null;
         }
 
         getChannelMessages(channelId) {
@@ -779,10 +781,6 @@ module.exports = (() => {
                 return null;
             }
             return this.messagesMod.getMessages(channelId)._array;
-        }
-
-        getCurrentGuild() {
-            return this.guildMod.getGuild(this.guildIDMod.getGuildId()) ?? null;
         }
 
         getCurrentUser() {

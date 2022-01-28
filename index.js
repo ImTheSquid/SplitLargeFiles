@@ -3,7 +3,7 @@ module.exports = (Plugin, Library) => {
 
     const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, ContextMenu, Settings} = Library;
     const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
-    const {Dispatcher, React, ReactDOM} = DiscordModules;
+    const {Dispatcher, React, ReactDOM, SelectedChannelStore, SelectedGuildStore} = DiscordModules;
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
         var c = new (a.constructor)(a.length + b.length);
@@ -392,6 +392,8 @@ module.exports = (Plugin, Library) => {
                 });
             });
 
+            // TODO: Patch DMUserContextMenu
+
             // Handle deletion of part of file to delete all other parts either by user or automod
             this.messageDelete = e => {
                 // Disregard if not in same channel
@@ -525,7 +527,7 @@ module.exports = (Plugin, Library) => {
             }
 
             // Built-in buffer, otherwise file upload fails
-            return this.fileCheckMod.maxFileSize(this.getCurrentGuild(), true) - 1000;
+            return this.fileCheckMod.maxFileSize(SelectedGuildStore.getGuildId(), true) - 1000;
         }
 
         // Looks through current messages to see which ones have (supposedly) complete .dlfc files and make a list of them
@@ -718,7 +720,7 @@ module.exports = (Plugin, Library) => {
         }
 
         getCurrentChannel() {
-            return this.channelMod.getChannel(DiscordModules.SelectedChannelStore.getChannelId()) ?? null;
+            return this.channelMod.getChannel(SelectedChannelStore.getChannelId()) ?? null;
         }
 
         getChannelMessages(channelId) {
@@ -726,10 +728,6 @@ module.exports = (Plugin, Library) => {
                 return null;
             }
             return this.messagesMod.getMessages(channelId)._array;
-        }
-
-        getCurrentGuild() {
-            return this.guildMod.getGuild(this.guildIDMod.getGuildId()) ?? null;
         }
 
         getCurrentUser() {
