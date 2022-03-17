@@ -34,3 +34,4 @@ Downloading the file results in the reassembled original file being put in the d
 
 ## My Other Plugins
 - [StickerSnatcher](https://github.com/ImTheSquid/StickerSnatcher)
+- [SettingsSync](https://github.com/ImTheSquid/SettingsSync)
