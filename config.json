@@ -7,13 +7,17 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.5.7",
+        "version": "1.6.0",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
-        {"title": "Seizing Opportunity", "items": ["Split Large Files now correctly detects if a server has an increased upload size cap and utilizes it."]}
+        {"title": "Mini-Overhaul", "items": [
+            "React is now used for all visuals where possible, performance should be massively improved",
+            "Chunk files now have their own custom icon for message attachments",
+            "The Save Files dialog is now used for choosing the location of a downloaded chunk file"
+        ]}
     ],
-    "main": "index.js"
+    "main": "bundled.js"
 }

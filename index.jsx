@@ -2,8 +2,23 @@ module.exports = (Plugin, Library) => {
     "use strict";
 
     const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, ContextMenu, Settings} = Library;
-    const {SettingPanel, Switch, Textbox, Slider, SettingGroup} = Settings;
-    const {Dispatcher, React, ReactDOM, SelectedChannelStore, SelectedGuildStore} = DiscordModules;
+    const {SettingPanel, Slider} = Settings;
+    const {Dispatcher, React, SelectedChannelStore, SelectedGuildStore} = DiscordModules;
+
+    // Set globals
+    const fileCheckMod = WebpackModules.getByProps("anyFileTooLarge", "maxFileSize");
+    const fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
+
+    // Utility modules
+    const channelMod = BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel");
+    const messagesMod = BdApi.findModuleByProps("hasCurrentUserSentMessage", "getMessage");
+    const guildMod = BdApi.findModuleByProps("getGuild");
+    const guildIDMod = BdApi.findModuleByProps("getGuildId");
+    const userMod = BdApi.findModuleByProps("getCurrentUser");
+    const permissionsMod = BdApi.findModuleByProps("computePermissions");
+    const deleteMod = BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage");
+    const MessageAccessories = WebpackModules.find(mod => mod.MessageAccessories.displayName === "MessageAccessories");
+    const Attachment = WebpackModules.find(m => m.default?.displayName === "Attachment");
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
         var c = new (a.constructor)(a.length + b.length);
@@ -32,7 +47,7 @@ module.exports = (Plugin, Library) => {
         return [reconstructedName, splitData[splitData.length - 1]];
     }
 
-    const downloadFiles = download => {
+    function downloadFiles(download) {
         const https = require("https");
         const os = require("os");
         const fs = require("fs");
@@ -40,6 +55,8 @@ module.exports = (Plugin, Library) => {
         const crypto = require("crypto");
         const id = crypto.randomBytes(16).toString("hex");
         const tempFolder = fs.mkdtempSync(path.join(os.tmpdir(), `dlfc-download-${id}`));
+
+        BdApi.showToast("Downloading files...", {type: "info"});
 
         let promises = [];
         for (const url of download.urls) {
@@ -96,46 +113,11 @@ module.exports = (Plugin, Library) => {
             outputFile.close(() => {
                 // Save file to valid directory and open it if required
                 BdApi.showToast("File reassembled successfully", {type: "success"});
-                let saveDir = settings.fileSavePath;
-                try {
-                    fs.lstatSync(saveDir).isDirectory()
-                } catch (e) {
-                    saveDir = defaultSettingsData.fileSavePath;
-                }
-                // Try not to overwrite any currently existing files
-                // Number of times to attempt to put [filename] ([number]).[extension] before defaulting to a random ID
-                const MAX_SOFT_COPY_ATTEMPTS = 256;
-                const [filename, extension] = convertFilenameToComponents(download.filename);
-                let appendValue = "";
-                // See if file exists, if it does then go through loop to try not to overwrite it
-                try {
-                    fs.lstatSync(path.join(saveDir, `${download.filename}`)).isFile()
 
-                    let foundFreeName = false;
-                    for (let copyAttempt = 1; copyAttempt - 1 < MAX_SOFT_COPY_ATTEMPTS; copyAttempt++) {
-                        try {
-                            fs.lstatSync(path.join(saveDir, `${filename} (${copyAttempt}).${extension}`)).isFile()
-                        } catch (e) {
-                            if (e.code === "ENOENT") {
-                                appendValue = ` (${copyAttempt})`;
-                                foundFreeName = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!foundFreeName) {
-                        appendValue = ` ${id}`
-                    }
-                } catch {}
-
-                fs.copyFileSync(path.join(tempFolder, `${download.filename}`), path.join(saveDir, `${filename}${appendValue}.${extension}`));
+                DiscordNative.fileManager.saveWithDialog(fs.readFileSync(path.join(tempFolder, `${download.filename}`)), download.filename);
 
                 // Clean up
                 fs.rmdirSync(tempFolder, {recursive: true});
-                if (settings.openFileAfterSave) {
-                    require("electron").shell.showItemInFolder(path.join(saveDir, `${download.filename}`));
-                }
             });
         })
         .catch(err => {
@@ -145,70 +127,61 @@ module.exports = (Plugin, Library) => {
         })
     }
 
-    class NamedDownloadLink extends React.Component {
+    class AttachmentShim extends React.Component {
         constructor(props) {
             super(props);
-            this.linkWasClicked = this.linkWasClicked.bind(this);
+
+            this.child = props.children;
+            this.attachmentID = props.attachmentData.id;
+
             this.state = {
-                elementClasses: props.classes,
-                download: props.download
+                downloadData: null
+            }
+
+            this.onNewDownload = this.onNewDownload.bind(this);
+        }
+
+        componentDidMount() {
+            Dispatcher.subscribe("DLFC_REFRESH_DOWNLOADS", this.onNewDownload);
+        }
+
+        componentWillUnmount() {
+            Dispatcher.unsubscribe("DLFC_REFRESH_DOWNLOADS", this.onNewDownload);
+        }
+
+        onNewDownload(e) {
+            // Don't do anything if full download data already received
+            if (this.state.downloadData) { return; }
+
+            for (const download of e.downloads) {
+                if (download.messages[0].attachmentID === this.attachmentID) {
+                    this.setState({downloadData: download});
+                    break;
+                }
             }
         }
 
-        linkWasClicked(e) {
-            e.preventDefault();
-            BdApi.showToast("Downloading files...", {type: "info"});
-            downloadFiles(this.state.download);
-        }
-
         render() {
-            return React.createElement("a", {className: this.state.elementClasses, onClick: this.linkWasClicked, href: "/"}, this.state.download.filename);
-        }
-    }
-
-    class IconDownloadLink extends React.Component {
-        constructor(props) {
-            super(props);
-            this.linkWasClicked = this.linkWasClicked.bind(this);
-            this.state = {
-                svgClasses: props.svgClasses,
-                elementClasses: props.classes,
-                innerHTML: props.innerHTML,
-                download: props.download
+            if (this.state.downloadData) {
+                return React.createElement(Attachment.default, {
+                    filename: this.state.downloadData.filename,
+                    url: null,
+                    dlfc: true,
+                    size: this.state.downloadData.totalSize,
+                    onClick: () => { downloadFiles(this.state.downloadData); }
+                }, []);
+            } else {
+                return this.child;
             }
-        }
-
-        linkWasClicked(e) {
-            e.preventDefault();
-            BdApi.showToast("Downloading files...", {type: "info"});
-            downloadFiles(this.state.download);
-        }
-
-        render() {
-            // Can't create React child component from original SVG due to lack of ability to properly inline divs in anchors
-            return React.createElement("a", {children: this.state.innerHTML, className: this.state.elementClasses, onClick: this.linkWasClicked, href: "/"}, React.createElement("svg", {
-                class: this.state.svgClasses,
-                "aria-hidden": "false",
-                width: "24",
-                height: "24",
-                viewBox: "0 0 24 24"
-              }, React.createElement("path", {
-                fill: "currentColor",
-                "fill-rule": "evenodd",
-                "clip-rule": "evenodd",
-                d: "M16.293 9.293L17.707 10.707L12 16.414L6.29297 10.707L7.70697 9.293L11 12.586V2H13V12.586L16.293 9.293ZM18 20V18H20V20C20 21.102 19.104 22 18 22H6C4.896 22 4 21.102 4 20V18H6V20H18Z"
-              })));
         }
     }
 
     const defaultSettingsData = {
-        openFileAfterSave: false,
-        fileSavePath: require("path").join(require("os").homedir(), "Downloads"),
         deletionDelay: 9,
         uploadDelay: 9,
         uploadBatchSize: 3
     };
-    let settings = {};
+    let settings = null;
 
     const reloadSettings = () => {
         settings = PluginUtilities.loadSettings("SplitLargeFiles", defaultSettingsData);
@@ -223,22 +196,13 @@ module.exports = (Plugin, Library) => {
 
     class SplitLargeFiles extends Plugin {
         onStart() {
-
-            // Set globals
-            this.fileCheckMod = WebpackModules.getByProps("anyFileTooLarge", "maxFileSize");
-            this.fileUploadMod = WebpackModules.getByProps("instantBatchUpload", "upload");
-
-            // Utility modules
-            this.channelMod = BdApi.findModuleByProps("getChannel", "getMutablePrivateChannels", "hasChannel");
-            this.messagesMod = BdApi.findModuleByProps("hasCurrentUserSentMessage", "getMessage");
-            this.guildMod = BdApi.findModuleByProps("getGuild");
-            this.guildIDMod = BdApi.findModuleByProps("getGuildId");
-            this.userMod = BdApi.findModuleByProps("getCurrentUser");
-            this.permissionsMod = BdApi.findModuleByProps("computePermissions");
-            this.deleteMod = BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage");
-
-            // Array of currently mounted React components that will need to be unmounted whenever the channel changes
-            this.mountedNodes = [];
+            BdApi.injectCSS("SplitLargeFiles", `
+                .dlfcIcon {
+                    width: 30px; 
+                    height: 40px; 
+                    margin-right: 8px;
+                }
+            `);
 
             // Load settings data
             reloadSettings();
@@ -251,20 +215,19 @@ module.exports = (Plugin, Library) => {
              */
 
             // Make all file too large checks succeed
-            Patcher.instead(this.fileCheckMod, "anyFileTooLarge", (_, __, ___) => {
+            Patcher.instead(fileCheckMod, "anyFileTooLarge", (_, __, ___) => {
                 return false;
             });
 
-            Patcher.instead(this.fileCheckMod, "uploadSumTooLarge", (_, __, ___) => {
+            Patcher.instead(fileCheckMod, "uploadSumTooLarge", (_, __, ___) => {
                 return false;
             })
 
-            Patcher.instead(this.fileCheckMod, "getUploadFileSizeSum", (_, __, ___) => {
+            Patcher.instead(fileCheckMod, "getUploadFileSizeSum", (_, __, ___) => {
                 return 0;
             })
-
             // Inject flag argument so that this plugin can still get real max size for chunking but anything else gets a really big number
-            Patcher.instead(this.fileCheckMod, "maxFileSize", (_, args, original) => {
+            Patcher.instead(fileCheckMod, "maxFileSize", (_, args, original) => {
                 // Must be unwrapped this way otherwise errors occur with undefined unwrapping
                 const [arg, use_original] = args;
                 if (use_original) {
@@ -274,7 +237,7 @@ module.exports = (Plugin, Library) => {
             });
 
             // Patch upload call to either pass file unaltered if under limit or chunked if over
-            Patcher.instead(this.fileUploadMod, "upload", (_, args, original) => {
+            Patcher.instead(fileUploadMod, "upload", (_, args, original) => {
                 const [channelId, file, n] = args;
                 // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
@@ -296,7 +259,7 @@ module.exports = (Plugin, Library) => {
                 this.uploadLargeFiles([file], channelId, n);
             });
 
-            Patcher.instead(this.fileUploadMod, "uploadFiles", (_, args, original) => {
+            Patcher.instead(fileUploadMod, "uploadFiles", (_, args, original) => {
                 const [channelId, files, n, message, stickers] = args;
 
                 // Make sure we can upload at all
@@ -337,6 +300,30 @@ module.exports = (Plugin, Library) => {
                 }
             });
 
+            Patcher.after(MessageAccessories.MessageAccessories.prototype, "renderAttachments", (_, [arg], ret) => {
+                if (!ret || arg.attachments.length === 0 || !arg.attachments[0].filename.endsWith(".dlfc")) { return; }
+
+                const component = ret[0].props.children;
+                ret[0].props.children = (
+                    <AttachmentShim attachmentData={arg.attachments[0]}>
+                        {component}
+                    </AttachmentShim>
+                );
+            });
+
+            // Adds onClick to download arrow button that for some reason doesn't have it already
+            Patcher.after(Attachment, "default", (_, args, ret) => {
+                ret.props.children[2].props.onClick = args[0].onClick;
+                if (args[0].dlfc) {
+                    ret.props.children[0] = React.createElement("img", {
+                        className: "dlfcIcon",
+                        alt: "Attachment file type: SplitLargeFiles Chunk File", 
+                        title: "SplitLargeFiles Chunk File",
+                        src: "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDcyIDk2IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHhtbDpzcGFjZT0icHJlc2VydmUiIHhtbG5zOnNlcmlmPSJodHRwOi8vd3d3LnNlcmlmLmNvbS8iIHN0eWxlPSJmaWxsLXJ1bGU6ZXZlbm9kZDtjbGlwLXJ1bGU6ZXZlbm9kZDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6MjsiPgogICAgPHBhdGggZD0iTTcyLDI5LjNMNzIsODkuNkM3Miw5MS44NCA3Miw5Mi45NiA3MS41Niw5My44MkM3MS4xOCw5NC41NiA3MC41Niw5NS4xOCA2OS44Miw5NS41NkM2OC45Niw5NiA2Ny44NCw5NiA2NS42LDk2TDYuNCw5NkM0LjE2LDk2IDMuMDQsOTYgMi4xOCw5NS41NkMxLjQ0LDk1LjE4IDAuODIsOTQuNTYgMC40NCw5My44MkMwLDkyLjk2IDAsOTEuODQgMCw4OS42TDAsNi40QzAsNC4xNiAwLDMuMDQgMC40NCwyLjE4QzAuODIsMS40NCAxLjQ0LDAuODIgMi4xOCwwLjQ0QzMuMDQsLTAgNC4xNiwtMCA2LjQsLTBMNDIuNywtMEM0NC42NiwtMCA0NS42NCwtMCA0Ni41NiwwLjIyQzQ3LjA2LDAuMzQgNDcuNTQsMC41IDQ4LDAuNzJMNDgsMTcuNkM0OCwxOS44NCA0OCwyMC45NiA0OC40NCwyMS44MkM0OC44MiwyMi41NiA0OS40NCwyMy4xOCA1MC4xOCwyMy41NkM1MS4wNCwyNCA1Mi4xNiwyNCA1NC40LDI0TDcxLjI4LDI0QzcxLjUsMjQuNDYgNzEuNjYsMjQuOTQgNzEuNzgsMjUuNDRDNzIsMjYuMzYgNzIsMjcuMzQgNzIsMjkuM1oiIHN0eWxlPSJmaWxsOnJnYigyMTEsMjE0LDI1Myk7ZmlsbC1ydWxlOm5vbnplcm87Ii8+CiAgICA8cGF0aCBkPSJNNjguMjYsMjAuMjZDNjkuNjQsMjEuNjQgNzAuMzIsMjIuMzIgNzAuODIsMjMuMTRDNzEsMjMuNDIgNzEuMTQsMjMuNyA3MS4yOCwyNEw1NC40LDI0QzUyLjE2LDI0IDUxLjA0LDI0IDUwLjE4LDIzLjU2QzQ5LjQ0LDIzLjE4IDQ4LjgyLDIyLjU2IDQ4LjQ0LDIxLjgyQzQ4LDIwLjk2IDQ4LDE5Ljg0IDQ4LDE3LjZMNDgsMC43MkM0OC4zLDAuODYgNDguNTgsMSA0OC44NiwxLjE4QzQ5LjY4LDEuNjggNTAuMzYsMi4zNiA1MS43NCwzLjc0TDY4LjI2LDIwLjI2WiIgc3R5bGU9ImZpbGw6cmdiKDE0NywxNTUsMjQ5KTtmaWxsLXJ1bGU6bm9uemVybzsiLz4KICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsNC41LDcpIj4KICAgICAgICA8cmVjdCB4PSIxMSIgeT0iNDEiIHdpZHRoPSI0MSIgaGVpZ2h0PSIyOCIgc3R5bGU9ImZpbGw6cmdiKDE0NywxNTUsMjQ5KTsiLz4KICAgIDwvZz4KICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDAuNSwtMiwyMy41KSI+CiAgICAgICAgPHJlY3QgeD0iMjEiIHk9IjM5IiB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHN0eWxlPSJmaWxsOnJnYigxNDcsMTU1LDI0OSk7Ii8+CiAgICA8L2c+CiAgICA8ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwwLjUsMjIsMjMuNSkiPgogICAgICAgIDxyZWN0IHg9IjIxIiB5PSIzOSIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBzdHlsZT0iZmlsbDpyZ2IoMTQ3LDE1NSwyNDkpOyIvPgogICAgPC9nPgo8L3N2Zz4K"
+                    });
+                }
+            });
+
             /**
              * RENDER MODULE
              */
@@ -353,16 +340,18 @@ module.exports = (Plugin, Library) => {
             Dispatcher.subscribe("MESSAGE_CREATE", this.messageCreate);
 
             this.channelSelect = _ => {
-                // Clear all previously-mounted React components to prevent memory leaks
-                for (const node of this.mountedNodes) {
-                    ReactDOM.unmountComponentAtNode(node);
-                }
-
                 // Wait a bit to allow DOM to update before refreshing
                 setTimeout(() => this.findAvailableDownloads(), 200);
             };
 
             Dispatcher.subscribe("CHANNEL_SELECT", this.channelSelect);
+
+            // Adds some redundancy for slow network connections
+            this.loadMessagesSuccess = _ => {
+                this.findAvailableDownloads();
+            };
+
+            Dispatcher.subscribe("LOAD_MESSAGES_SUCCESS", this.loadMessagesSuccess);
 
             // Manual refresh button in both channel and message menus
             ContextMenu.getDiscordMenu("MessageContextMenu").then(menu => {
@@ -372,7 +361,7 @@ module.exports = (Plugin, Library) => {
                         BdApi.showToast("Downloadables refreshed", {type: "success"});
                     }}));
                     const incomplete = this.incompleteDownloads.find(download => download.messages.find(message => message.id === arg.message.id));
-                    if (incomplete && this.canDeleteDownload(download)) {
+                    if (incomplete && this.canDeleteDownload(incomplete)) {
                         ret.props.children.splice(6, 0, ContextMenu.buildMenuItem({label: "Delete Download Fragments", danger: true, action: () => {
                             this.deleteDownload(incomplete);
                             this.findAvailableDownloads();
@@ -452,7 +441,7 @@ module.exports = (Plugin, Library) => {
 
                     // Upload through built-in batch system
                     for (let i = 0; i < Math.ceil(fileList.length / batchSize); ++i) {
-                        setTimeout(() => this.fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1000);
+                        setTimeout(() => fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1000);
                     }
                 }).catch(err => {
                     Logger.error(err);
@@ -472,62 +461,46 @@ module.exports = (Plugin, Library) => {
         getSettingsPanel() {
             reloadSettings();
             return new SettingPanel(() => { PluginUtilities.saveSettings("SplitLargeFiles", settings); }, 
-                new SettingGroup("Downloads").append(
-                    new Textbox("Default File Save Path", "Path to save reassembled file to." + 
-                        " An invalid path will result in the file being saved to the Downloads folder in your home directory.", settings.fileSavePath, folderPath => {
-                            if (!folderPath) {
-                                settings.fileSavePath = defaultSettingsData.fileSavePath;
-                            } else {
-                                settings.fileSavePath = folderPath;
-                            }
-                        }, {placeholder: defaultSettingsData.fileSavePath}),
+                new Slider("Chunk File Upload Batch Size", "Number of chunk files to queue per upload operation." + 
+                    " Setting this higher uploads your files faster but increases the chance of upload errors.", 
+                    validUploadBatchSizes[0], validUploadBatchSizes[validUploadBatchSizes.length - 1], settings.uploadBatchSize, newVal => {
+                        // Make sure value is in bounds
+                        if (newVal > validUploadBatchSizes[validUploadBatchSizes.length - 1] || newVal < validUploadBatchSizes[0]) {
+                            newVal = validUploadBatchSizes[0];
+                        }
+                        settings.uploadBatchSize = newVal;
+                    }, {markers: validUploadBatchSizes, stickToMarkers: true}),
 
-                    new Switch("Open File Location After Save", "Open the reassembled file's location after it is saved.", settings.openFileAfterSave, newVal => { 
-                        settings.openFileAfterSave = newVal; 
-                    })
-                ),
-                new SettingGroup("Uploads").append(
-                    new Slider("Chunk File Upload Batch Size", "Number of chunk files to queue per upload operation." + 
-                        " Setting this higher uploads your files faster but increases the chance of upload errors.", 
-                        validUploadBatchSizes[0], validUploadBatchSizes[validUploadBatchSizes.length - 1], settings.uploadBatchSize, newVal => {
-                            // Make sure value is in bounds
-                            if (newVal > validUploadBatchSizes[validUploadBatchSizes.length - 1] || newVal < validUploadBatchSizes[0]) {
-                                newVal = validUploadBatchSizes[0];
-                            }
-                            settings.uploadBatchSize = newVal;
-                        }, {markers: validUploadBatchSizes, stickToMarkers: true}),
+                new Slider("Chunk File Upload Delay", "How long to wait (in seconds) before uploading each chunk file batch." + 
+                    " If you plan on uploading VERY large files you should set this value high to avoid API spam.",
+                    validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.uploadDelay, newVal => {
+                        // Make sure value is in bounds
+                        if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
+                            newVal = validActionDelays[0];
+                        }
+                        settings.uploadDelay = newVal;
+                    }, {markers: validActionDelays, stickToMarkers: true}),
 
-                    new Slider("Chunk File Upload Delay", "How long to wait (in seconds) before uploading each chunk file batch." + 
-                        " If you plan on uploading VERY large files you should set this value high to avoid API spam.",
-                        validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.uploadDelay, newVal => {
-                            // Make sure value is in bounds
-                            if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
-                                newVal = validActionDelays[0];
-                            }
-                            settings.uploadDelay = newVal;
-                        }, {markers: validActionDelays, stickToMarkers: true}),
-
-                    new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
-                        " If you plan on deleting VERY large files you should set this value high to avoid API spam.", 
-                        validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.deletionDelay, newVal => {
-                            // Make sure value is in bounds
-                            if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
-                                newVal = validActionDelays[0];
-                            }
-                            settings.deletionDelay = newVal;
-                        }, {markers: validActionDelays, stickToMarkers: true})
-                )
+                new Slider("Chunk File Deletion Delay", "How long to wait (in seconds) before deleting each sequential message of a chunk file." + 
+                    " If you plan on deleting VERY large files you should set this value high to avoid API spam.", 
+                    validActionDelays[0], validActionDelays[validActionDelays.length - 1], settings.deletionDelay, newVal => {
+                        // Make sure value is in bounds
+                        if (newVal > validActionDelays[validActionDelays.length - 1] || newVal < validActionDelays[0]) {
+                            newVal = validActionDelays[0];
+                        }
+                        settings.deletionDelay = newVal;
+                    }, {markers: validActionDelays, stickToMarkers: true})
             ).getElement();
         }
 
         // Gets the maximum file upload size for the current server
         maxFileUploadSize() {
-            if (!this.fileCheckMod) {
+            if (!fileCheckMod) {
                 return 0;
             }
 
             // Built-in buffer, otherwise file upload fails
-            return this.fileCheckMod.maxFileSize(SelectedGuildStore.getGuildId(), true) - 1000;
+            return fileCheckMod.maxFileSize(SelectedGuildStore.getGuildId(), true) - 1000;
         }
 
         // Looks through current messages to see which ones have (supposedly) complete .dlfc files and make a list of them
@@ -557,7 +530,7 @@ module.exports = (Plugin, Library) => {
                     if (existingEntry) {
                         // Add to existing entry if found
                         existingEntry.urls.push(attachment.url);
-                        existingEntry.messages.push({id: message.id, date: message.timestamp});
+                        existingEntry.messages.push({id: message.id, date: message.timestamp, attachmentID: attachment.id});
                         existingEntry.foundParts.add(parseInt(attachment.filename));
                         existingEntry.totalSize += attachment.size;
                     } else {
@@ -566,7 +539,7 @@ module.exports = (Plugin, Library) => {
                             filename: realName,
                             owner: message.author.id,
                             urls: [attachment.url],
-                            messages: [{id: message.id, date: message.timestamp}],
+                            messages: [{id: message.id, date: message.timestamp, attachmentID: attachment.id}],
                             foundParts: new Set([parseInt(attachment.filename)]),
                             totalSize: attachment.size
                         });
@@ -610,75 +583,25 @@ module.exports = (Plugin, Library) => {
             this.registeredDownloads.forEach(download => {
                 download.messages.sort((first, second) => first.date - second.date);
                 // Rename first message to real file name
-                this.formatFirstDownloadMessage(download.messages[0].id, download);
+                // this.formatFirstDownloadMessage(download.messages[0].id, download);
 
                 // Hide the rest of the messages
                 for (let messageIndex = 1; messageIndex < download.messages.length; messageIndex++) {
                     this.setMessageVisibility(download.messages[messageIndex].id, false);
                 }
             });
+
+            if (this.registeredDownloads.length > 0) {
+                Dispatcher.dirtyDispatch({
+                    type: "DLFC_REFRESH_DOWNLOADS",
+                    downloads: this.registeredDownloads
+                });
+            }
         }
 
         // Extracts the original file name from the wrapper
         extractRealFileName(name) {
             return name.slice(name.indexOf("_") + 1, name.length - 5);
-        }
-
-        // Converts the first download message into a readable format that displays the original file name and size
-        formatFirstDownloadMessage(id, download) {
-            const {totalSize} = download;
-
-            const attachment = DOMTools.query(`#message-accessories-${id}`).children[0].children[0];
-
-            const attachmentInner = this.findFirstInDOMChildren(attachment, /attachmentInner/, element => element.className);
-            if (!attachmentInner) {
-                Logger.error(`Unable to find attachmentInner for message with ID ${id}`);
-                return;
-            }
-
-            const fileSize = this.findFirstInDOMChildren(attachmentInner, /metadata/, element => element.className);
-            if (!fileSize) {
-                Logger.error(`Unable to find filesize metadata for message with ID ${id}`);
-                return;
-            }
-
-            // Change size to show real size
-            fileSize.innerHTML = `${(totalSize / 1000000).toFixed(2)} MB Chunk File`;
-
-            // Change links to run internal download and reassemble function
-            const namedLinkWrapper = this.findFirstInDOMChildren(attachmentInner, /filenameLinkWrapper/, element => element.className);
-            if (!namedLinkWrapper) {
-                Logger.error(`Unable to find named link for message with ID ${id}`);
-                return;
-            }
-
-            const iconDownloadLink = this.findFirstInDOMChildren(attachment, /.+/, element => element.href);
-            if (!iconDownloadLink) {
-                if (!this.findFirstInDOMChildren(attachment, /iconChunkDownloader/, element => element.className)) {
-                    Logger.error(`Unable to find icon link for message with ID ${id}`);
-                }
-                return;
-            }
-            iconDownloadLink.remove();
-            const newIconDownloadContainer = document.createElement("div");
-            newIconDownloadContainer.className = "iconChunkDownloader";
-            attachment.appendChild(newIconDownloadContainer);
-
-            // Keep references to nodes that have components attached that need to be unmounted on channel change
-            this.mountedNodes.push(newIconDownloadContainer, namedLinkWrapper);
-
-            ReactDOM.render(React.createElement(IconDownloadLink, {classes: iconDownloadLink.className, svgClasses: iconDownloadLink.children[0].className.baseVal, download: download}), newIconDownloadContainer);
-            ReactDOM.render(React.createElement(NamedDownloadLink, {classes: namedLinkWrapper.children[0].className, download: download}), namedLinkWrapper);
-        }
-
-        // childFormat: a function that takes an element and returns the property to be tested by the regex
-        findFirstInDOMChildren(element, regex, childFormat) {
-            for (const child of element.children) {
-                if (childFormat(child) && regex.test(childFormat(child))) {
-                    return child;
-                }
-            }
-            return null;
         }
 
         // Shows/hides a message with a certain ID
@@ -697,7 +620,7 @@ module.exports = (Plugin, Library) => {
 
         // Deletes a download with a delay to make sure Discord's API isn't spammed
         // Excludes a message that was already deleted
-        deleteDownload(download, excludeMessage) {
+        deleteDownload(download, excludeMessage = null) {
             BdApi.showToast(`Deleting chunks (1 chunk/${settings.deletionDelay} seconds)`, {type: "success"});
             let delayCount = 1;
             for (const message of this.getChannelMessages(this.getCurrentChannel().id)) {
@@ -720,18 +643,18 @@ module.exports = (Plugin, Library) => {
         }
 
         getCurrentChannel() {
-            return this.channelMod.getChannel(SelectedChannelStore.getChannelId()) ?? null;
+            return channelMod.getChannel(SelectedChannelStore.getChannelId()) ?? null;
         }
 
         getChannelMessages(channelId) {
             if (!channelId) {
                 return null;
             }
-            return this.messagesMod.getMessages(channelId)._array;
+            return messagesMod.getMessages(channelId)._array;
         }
 
         getCurrentUser() {
-            return this.userMod.getCurrentUser();
+            return userMod.getCurrentUser();
         }
 
         canManageMessages() {
@@ -740,11 +663,11 @@ module.exports = (Plugin, Library) => {
                 return false;
             }
             // Convert permissions big int into bool using falsy coercion
-            return !!(this.permissionsMod.computePermissions(currentChannel) & 0x2000n);
+            return !!(permissionsMod.computePermissions(currentChannel) & 0x2000n);
         }
 
         deleteMessage(message) {
-            this.deleteMod.deleteMessage(message.channel_id, message.id, false);
+            deleteMod.deleteMessage(message.channel_id, message.id, false);
         }
 
         onStop() {
@@ -752,11 +675,8 @@ module.exports = (Plugin, Library) => {
             Dispatcher.unsubscribe("MESSAGE_CREATE", this.messageCreate);
             Dispatcher.unsubscribe("CHANNEL_SELECT", this.channelSelect);
             Dispatcher.unsubscribe("MESSAGE_DELETE", this.messageDelete);
-
-            // Clear all previously-mounted React components to prevent memory leaks
-            for (const node of this.mountedNodes) {
-                ReactDOM.unmountComponentAtNode(node);
-            }
+            Dispatcher.unsubscribe("LOAD_MESSAGES_SUCCESS", this.loadMessagesSuccess);
+            BdApi.clearCSS("SplitLargeFiles");
         }
     };
 

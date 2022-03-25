@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# ESBuild
+esbuild index.jsx --bundle --outfile=bundled.js --platform=node --external:electron
+
 npm run build_plugin SplitLargeFiles --prefix ../../
 cp ../../release/SplitLargeFiles.plugin.js .
 
