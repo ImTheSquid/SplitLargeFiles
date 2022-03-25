@@ -17,7 +17,7 @@ That gets visually reassembled once uploading is complete.
 Downloading the file results in the reassembled original file being put in the directory of your choice.
 
 ## Other Features
-- Automatically open file manager once download is complete
+- Choose where to save completed download
 - Manual refresh controls both per-message and per-channel in context menus
 - Automatic full-file deletion for your own chunk files that doesn't spam Discord's API
 - Full support for new multi-upload system with automatic rate limiting to prevent API spam
