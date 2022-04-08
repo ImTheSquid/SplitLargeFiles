@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.6.0","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Mini-Overhaul","items":["React is now used for all visuals where possible, performance should be massively improved","Chunk files now have their own custom icon for message attachments","The Save Files dialog is now used for choosing the location of a downloaded chunk file"]}],"main":"bundled.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.6.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes and Improvements","items":["Added instant-upload support","Fixed no upload issue due to Discord update"]}],"main":"bundled.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -252,15 +252,40 @@ module.exports = (() => {
         BdApi.showToast("Generating file chunks...", { type: "info" });
         this.uploadLargeFiles([file], channelId, n);
       });
+      Patcher.instead(fileUploadMod, "instantBatchUpload", (_, args, original) => {
+        Logger.log(args);
+        let oversizedFiles = [];
+        let regularFiles = [];
+        for (let fIndex = 0; fIndex < args[1].length; fIndex++) {
+          const file = args[1][fIndex];
+          const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
+          if (numChunks == 1) {
+            regularFiles.push(file);
+            continue;
+          } else if (numChunksWithHeaders > 255) {
+            BdApi.showToast("File size exceeds max chunk count of 255.", { type: "error" });
+            return;
+          }
+          oversizedFiles.push(file);
+        }
+        if (oversizedFiles.length > 0) {
+          Logger.log(oversizedFiles);
+          this.uploadLargeFiles(oversizedFiles, args[0], oversizedFiles.length > 1);
+        }
+        if (regularFiles.length > 0) {
+          original(args[0], regularFiles, args[2]);
+        }
+      });
       Patcher.instead(fileUploadMod, "uploadFiles", (_, args, original) => {
-        const [channelId, files, n, message, stickers] = args;
+        Logger.log(args);
+        const { channelId, draftType, options, parsedMessage, uploads } = args[0];
         if (this.maxFileUploadSize() === 0) {
           BdApi.showToast("Failed to get max file upload size.", { type: "error" });
           return;
         }
         let oversizedFiles = [];
-        for (let fIndex = 0; fIndex < files.length; fIndex++) {
-          const file = files[fIndex].item.file;
+        for (let fIndex = 0; fIndex < uploads.length; fIndex++) {
+          const file = uploads[fIndex].item.file;
           const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
           if (numChunks == 1) {
             continue;
@@ -268,15 +293,15 @@ module.exports = (() => {
             BdApi.showToast("File size exceeds max chunk count of 255.", { type: "error" });
             return;
           }
-          files.splice(fIndex, 1);
+          uploads.splice(fIndex, 1);
           oversizedFiles.push(file);
           fIndex--;
         }
-        if (files.length > 0 || message.content.length > 0 || stickers.stickerIds.length > 0) {
-          original(channelId, files, n, message, stickers);
+        if (uploads.length > 0 || parsedMessage.content.length > 0 || options.stickerIds.length > 0) {
+          original({ channelId, draftType, options, parsedMessage, uploads });
         }
         if (oversizedFiles.length > 0) {
-          this.uploadLargeFiles(oversizedFiles, channelId, n, oversizedFiles.length > 1);
+          this.uploadLargeFiles(oversizedFiles, channelId, oversizedFiles.length > 1);
         }
       });
       Patcher.after(MessageAccessories.MessageAccessories.prototype, "renderAttachments", (_, [arg], ret) => {
@@ -357,7 +382,7 @@ module.exports = (() => {
         this.findAvailableDownloads();
       }, 1e4);
     }
-    uploadLargeFiles(files, channelId, n, disableBatch = false) {
+    uploadLargeFiles(files, channelId, disableBatch = false) {
       BdApi.showToast("Generating file chunks...", { type: "info" });
       const batchSize = disableBatch ? 1 : settings.uploadBatchSize;
       for (const file of files) {
@@ -373,7 +398,7 @@ module.exports = (() => {
             fileList.push(new File([concatTypedArrays(headerBytes, bytesToWrite)], `${chunk}-${numChunks - 1}_${file.name}.dlfc`));
           }
           for (let i = 0; i < Math.ceil(fileList.length / batchSize); ++i) {
-            setTimeout(() => fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1e3);
+            setTimeout(() => fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), 0), settings.uploadDelay * i * 1e3);
           }
         }).catch((err) => {
           Logger.error(err);

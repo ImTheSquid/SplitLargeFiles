@@ -259,8 +259,44 @@ module.exports = (Plugin, Library) => {
                 this.uploadLargeFiles([file], channelId, n);
             });
 
+            Patcher.instead(fileUploadMod, "instantBatchUpload", (_, args, original) => {
+                Logger.log(args);
+
+                let oversizedFiles = [];
+                let regularFiles = [];
+                for (let fIndex = 0; fIndex < args[1].length; fIndex++) {
+                    const file = args[1][fIndex];
+                    // Calculate chunks required
+                    const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
+                    // Don't do anything if no changes needed
+                    if (numChunks == 1) {
+                        // File is regular, add to regular list
+                        regularFiles.push(file);
+                        continue;
+                    } else if (numChunksWithHeaders > 255) { // Check to make sure the number of files when chunked with header is not greater than 255 otherwise fail
+                        BdApi.showToast("File size exceeds max chunk count of 255.", {type: "error"});
+                        return;
+                    }
+
+                    // File is oversized, add it to oversized list
+                    oversizedFiles.push(file);
+                }
+
+                if (oversizedFiles.length > 0) {
+                    Logger.log(oversizedFiles)
+                    this.uploadLargeFiles(oversizedFiles, args[0], oversizedFiles.length > 1);
+                }
+
+                // args[1] = regularFiles;
+                if (regularFiles.length > 0) {
+                    original(args[0], regularFiles, args[2]);
+                }
+            })
+
             Patcher.instead(fileUploadMod, "uploadFiles", (_, args, original) => {
-                const [channelId, files, n, message, stickers] = args;
+                Logger.log(args);
+                // const [channelId, files, n, message, stickers] = args;
+                const {channelId, draftType, options, parsedMessage, uploads} = args[0];
 
                 // Make sure we can upload at all
                 if (this.maxFileUploadSize() === 0) {
@@ -270,8 +306,8 @@ module.exports = (Plugin, Library) => {
 
                 // Iterate over files to see which ones are oversized and move them to an array if they are
                 let oversizedFiles = [];
-                for (let fIndex = 0; fIndex < files.length; fIndex++) {
-                    const file = files[fIndex].item.file;
+                for (let fIndex = 0; fIndex < uploads.length; fIndex++) {
+                    const file = uploads[fIndex].item.file;
                     // Calculate chunks required
                     const [numChunks, numChunksWithHeaders] = this.calcNumChunks(file);
                     // Don't do anything if no changes needed
@@ -283,20 +319,21 @@ module.exports = (Plugin, Library) => {
                     }
 
                     // File is oversized, remove it from the array and add it to oversized list
-                    files.splice(fIndex, 1);
+                    uploads.splice(fIndex, 1);
                     oversizedFiles.push(file);
                     // Adjust index to be consistent with new array positioning
                     fIndex--;
                 }
 
                 // Call original function with modified arguments UNLESS there is no other content
-                if (files.length > 0 || message.content.length > 0 || stickers.stickerIds.length > 0) {
-                    original(channelId, files, n, message, stickers);
+                if (uploads.length > 0 || parsedMessage.content.length > 0 || options.stickerIds.length > 0) {
+                    // original(channelId, files, n, message, stickers);
+                    original({channelId: channelId, draftType: draftType, options: options, parsedMessage: parsedMessage, uploads: uploads})
                 }
 
                 // Use batch uploader for chunk files
                 if (oversizedFiles.length > 0) {
-                    this.uploadLargeFiles(oversizedFiles, channelId, n, oversizedFiles.length > 1);
+                    this.uploadLargeFiles(oversizedFiles, channelId, oversizedFiles.length > 1);
                 }
             });
 
@@ -412,7 +449,7 @@ module.exports = (Plugin, Library) => {
 
         // Splits and uploads a large file
         // Batch uploading should be disabled when multiple files need to be uploaded to prevent API spam
-        uploadLargeFiles(files, channelId, n, disableBatch=false) {
+        uploadLargeFiles(files, channelId, disableBatch=false) {
             BdApi.showToast("Generating file chunks...", {type: "info"});
             const batchSize = disableBatch ? 1 : settings.uploadBatchSize;
             
@@ -441,7 +478,7 @@ module.exports = (Plugin, Library) => {
 
                     // Upload through built-in batch system
                     for (let i = 0; i < Math.ceil(fileList.length / batchSize); ++i) {
-                        setTimeout(() => fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), n), settings.uploadDelay * i * 1000);
+                        setTimeout(() => fileUploadMod.instantBatchUpload(channelId, fileList.slice(i * batchSize, i * batchSize + batchSize), 0), settings.uploadDelay * i * 1000);
                     }
                 }).catch(err => {
                     Logger.error(err);
