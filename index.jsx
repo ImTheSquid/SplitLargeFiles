@@ -260,8 +260,6 @@ module.exports = (Plugin, Library) => {
             });
 
             Patcher.instead(fileUploadMod, "instantBatchUpload", (_, args, original) => {
-                Logger.log(args);
-
                 let oversizedFiles = [];
                 let regularFiles = [];
                 for (let fIndex = 0; fIndex < args[1].length; fIndex++) {
@@ -283,7 +281,6 @@ module.exports = (Plugin, Library) => {
                 }
 
                 if (oversizedFiles.length > 0) {
-                    Logger.log(oversizedFiles)
                     this.uploadLargeFiles(oversizedFiles, args[0], oversizedFiles.length > 1);
                 }
 
@@ -294,8 +291,6 @@ module.exports = (Plugin, Library) => {
             })
 
             Patcher.instead(fileUploadMod, "uploadFiles", (_, args, original) => {
-                Logger.log(args);
-                // const [channelId, files, n, message, stickers] = args;
                 const {channelId, draftType, options, parsedMessage, uploads} = args[0];
 
                 // Make sure we can upload at all

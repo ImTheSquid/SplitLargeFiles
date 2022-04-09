@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.6.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes and Improvements","items":["Added instant-upload support","Fixed no upload issue due to Discord update"]}],"main":"bundled.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.6.2","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes and Improvements","items":["Added instant-upload support","Fixed no upload issue due to Discord update","Removed unneeded debug code"]}],"main":"bundled.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -253,7 +253,6 @@ module.exports = (() => {
         this.uploadLargeFiles([file], channelId, n);
       });
       Patcher.instead(fileUploadMod, "instantBatchUpload", (_, args, original) => {
-        Logger.log(args);
         let oversizedFiles = [];
         let regularFiles = [];
         for (let fIndex = 0; fIndex < args[1].length; fIndex++) {
@@ -269,7 +268,6 @@ module.exports = (() => {
           oversizedFiles.push(file);
         }
         if (oversizedFiles.length > 0) {
-          Logger.log(oversizedFiles);
           this.uploadLargeFiles(oversizedFiles, args[0], oversizedFiles.length > 1);
         }
         if (regularFiles.length > 0) {
@@ -277,7 +275,6 @@ module.exports = (() => {
         }
       });
       Patcher.instead(fileUploadMod, "uploadFiles", (_, args, original) => {
-        Logger.log(args);
         const { channelId, draftType, options, parsedMessage, uploads } = args[0];
         if (this.maxFileUploadSize() === 0) {
           BdApi.showToast("Failed to get max file upload size.", { type: "error" });

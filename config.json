@@ -7,7 +7,7 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.6.1",
+        "version": "1.6.2",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
@@ -15,7 +15,8 @@
     "changelog": [
         {"title": "Bug Fixes and Improvements", "items": [
             "Added instant-upload support",
-            "Fixed no upload issue due to Discord update"
+            "Fixed no upload issue due to Discord update",
+            "Removed unneeded debug code"
         ]}
     ],
     "main": "bundled.js"
