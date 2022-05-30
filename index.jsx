@@ -1,7 +1,7 @@
 module.exports = (Plugin, Library) => {
     "use strict";
 
-    const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, ContextMenu, Settings} = Library;
+    const {Logger, Patcher, WebpackModules, DiscordModules, DOMTools, PluginUtilities, ContextMenu, Settings, Popouts} = Library;
     const {SettingPanel, Slider} = Settings;
     const {Dispatcher, React, SelectedChannelStore, SelectedGuildStore} = DiscordModules;
 
@@ -17,8 +17,29 @@ module.exports = (Plugin, Library) => {
     const userMod = BdApi.findModuleByProps("getCurrentUser");
     const permissionsMod = BdApi.findModuleByProps("computePermissions");
     const deleteMod = BdApi.findModuleByProps("deleteMessage", "dismissAutomatedMessage");
+    const HeaderBarContainer = WebpackModules.find(mod => mod.default?.displayName === "HeaderBarContainer");
     const MessageAccessories = WebpackModules.find(mod => mod.MessageAccessories.displayName === "MessageAccessories");
     const Attachment = WebpackModules.find(m => m.default?.displayName === "Attachment");
+
+    const activeDownloads = new Map();
+
+    const crypto = require('crypto');
+    function downloadId(download) {
+        if (!download) return null;
+        return crypto.createHash('sha256').update(download.urls.join("")).digest('base64');
+    }
+
+    function addFileProgress(download, progress) {
+        if (activeDownloads.has(downloadId(download))) {
+            activeDownloads.set(downloadId(download), activeDownloads.get(downloadId(download)) + progress);
+        } else {
+            activeDownloads.set(downloadId(download), progress);
+        }
+
+        Dispatcher.dirtyDispatch({
+            type: 'SLF_UPDATE_PROGRESS'
+        });
+    }
 
     const concatTypedArrays = (a, b) => { // a, b TypedArray of same type
         var c = new (a.constructor)(a.length + b.length);
@@ -34,17 +55,6 @@ module.exports = (Plugin, Library) => {
             }
         }
         return true;
-    }
-
-    // Converts a file name into its name and extension
-    const convertFilenameToComponents = name => {
-        const splitData = name.split(".");
-        let reconstructedName = "";
-        for (let i = 0; i < splitData.length - 1; i++) {
-            reconstructedName += splitData[i];
-        }
-
-        return [reconstructedName, splitData[splitData.length - 1]];
     }
 
     function downloadFiles(download) {
@@ -69,6 +79,9 @@ module.exports = (Plugin, Library) => {
                     file.on("finish", () => {
                         file.close();
                         resolve(chunkName);
+                    })
+                    response.on('data', data => {
+                        addFileProgress(download, data.length);
                     })
                 }).on("error", err => {
                     fs.unlink(dest);
@@ -116,6 +129,12 @@ module.exports = (Plugin, Library) => {
 
                 DiscordNative.fileManager.saveWithDialog(fs.readFileSync(path.join(tempFolder, `${download.filename}`)), download.filename);
 
+                activeDownloads.delete(downloadId(download));
+
+                Dispatcher.dirtyDispatch({
+                    type: 'SLF_UPDATE_PROGRESS'
+                });
+
                 // Clean up
                 fs.rmdirSync(tempFolder, {recursive: true});
             });
@@ -127,6 +146,15 @@ module.exports = (Plugin, Library) => {
         })
     }
 
+    function FileIcon() {
+        return React.createElement("img", {
+            className: "dlfcIcon",
+            alt: "Attachment file type: SplitLargeFiles Chunk File", 
+            title: "SplitLargeFiles Chunk File",
+            src: "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDcyIDk2IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHhtbDpzcGFjZT0icHJlc2VydmUiIHhtbG5zOnNlcmlmPSJodHRwOi8vd3d3LnNlcmlmLmNvbS8iIHN0eWxlPSJmaWxsLXJ1bGU6ZXZlbm9kZDtjbGlwLXJ1bGU6ZXZlbm9kZDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6MjsiPgogICAgPHBhdGggZD0iTTcyLDI5LjNMNzIsODkuNkM3Miw5MS44NCA3Miw5Mi45NiA3MS41Niw5My44MkM3MS4xOCw5NC41NiA3MC41Niw5NS4xOCA2OS44Miw5NS41NkM2OC45Niw5NiA2Ny44NCw5NiA2NS42LDk2TDYuNCw5NkM0LjE2LDk2IDMuMDQsOTYgMi4xOCw5NS41NkMxLjQ0LDk1LjE4IDAuODIsOTQuNTYgMC40NCw5My44MkMwLDkyLjk2IDAsOTEuODQgMCw4OS42TDAsNi40QzAsNC4xNiAwLDMuMDQgMC40NCwyLjE4QzAuODIsMS40NCAxLjQ0LDAuODIgMi4xOCwwLjQ0QzMuMDQsLTAgNC4xNiwtMCA2LjQsLTBMNDIuNywtMEM0NC42NiwtMCA0NS42NCwtMCA0Ni41NiwwLjIyQzQ3LjA2LDAuMzQgNDcuNTQsMC41IDQ4LDAuNzJMNDgsMTcuNkM0OCwxOS44NCA0OCwyMC45NiA0OC40NCwyMS44MkM0OC44MiwyMi41NiA0OS40NCwyMy4xOCA1MC4xOCwyMy41NkM1MS4wNCwyNCA1Mi4xNiwyNCA1NC40LDI0TDcxLjI4LDI0QzcxLjUsMjQuNDYgNzEuNjYsMjQuOTQgNzEuNzgsMjUuNDRDNzIsMjYuMzYgNzIsMjcuMzQgNzIsMjkuM1oiIHN0eWxlPSJmaWxsOnJnYigyMTEsMjE0LDI1Myk7ZmlsbC1ydWxlOm5vbnplcm87Ii8+CiAgICA8cGF0aCBkPSJNNjguMjYsMjAuMjZDNjkuNjQsMjEuNjQgNzAuMzIsMjIuMzIgNzAuODIsMjMuMTRDNzEsMjMuNDIgNzEuMTQsMjMuNyA3MS4yOCwyNEw1NC40LDI0QzUyLjE2LDI0IDUxLjA0LDI0IDUwLjE4LDIzLjU2QzQ5LjQ0LDIzLjE4IDQ4LjgyLDIyLjU2IDQ4LjQ0LDIxLjgyQzQ4LDIwLjk2IDQ4LDE5Ljg0IDQ4LDE3LjZMNDgsMC43MkM0OC4zLDAuODYgNDguNTgsMSA0OC44NiwxLjE4QzQ5LjY4LDEuNjggNTAuMzYsMi4zNiA1MS43NCwzLjc0TDY4LjI2LDIwLjI2WiIgc3R5bGU9ImZpbGw6cmdiKDE0NywxNTUsMjQ5KTtmaWxsLXJ1bGU6bm9uemVybzsiLz4KICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsNC41LDcpIj4KICAgICAgICA8cmVjdCB4PSIxMSIgeT0iNDEiIHdpZHRoPSI0MSIgaGVpZ2h0PSIyOCIgc3R5bGU9ImZpbGw6cmdiKDE0NywxNTUsMjQ5KTsiLz4KICAgIDwvZz4KICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDAuNSwtMiwyMy41KSI+CiAgICAgICAgPHJlY3QgeD0iMjEiIHk9IjM5IiB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHN0eWxlPSJmaWxsOnJnYigxNDcsMTU1LDI0OSk7Ii8+CiAgICA8L2c+CiAgICA8ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwwLjUsMjIsMjMuNSkiPgogICAgICAgIDxyZWN0IHg9IjIxIiB5PSIzOSIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBzdHlsZT0iZmlsbDpyZ2IoMTQ3LDE1NSwyNDkpOyIvPgogICAgPC9nPgo8L3N2Zz4K"
+        });
+    }
+
     class AttachmentShim extends React.Component {
         constructor(props) {
             super(props);
@@ -135,18 +163,22 @@ module.exports = (Plugin, Library) => {
             this.attachmentID = props.attachmentData.id;
 
             this.state = {
-                downloadData: null
+                downloadData: null,
+                downloadProgress: 0
             }
 
             this.onNewDownload = this.onNewDownload.bind(this);
+            this.onDownloadProgress = this.onDownloadProgress.bind(this);
         }
 
         componentDidMount() {
             Dispatcher.subscribe("DLFC_REFRESH_DOWNLOADS", this.onNewDownload);
+            Dispatcher.subscribe('SLF_UPDATE_PROGRESS', this.onDownloadProgress);
         }
 
         componentWillUnmount() {
             Dispatcher.unsubscribe("DLFC_REFRESH_DOWNLOADS", this.onNewDownload);
+            Dispatcher.unsubscribe('SLF_UPDATE_PROGRESS', this.onDownloadProgress);
         }
 
         onNewDownload(e) {
@@ -161,10 +193,18 @@ module.exports = (Plugin, Library) => {
             }
         }
 
+        onDownloadProgress() {
+            if (this.state.downloadData && activeDownloads.has(downloadId(this.state.downloadData))) {
+                this.setState({downloadProgress: activeDownloads.get(downloadId(this.state.downloadData)) / this.state.downloadData.totalSize});
+            } else {
+                this.setState({downloadProgress: 0});
+            }
+        }
+
         render() {
             if (this.state.downloadData) {
                 return React.createElement(Attachment.default, {
-                    filename: this.state.downloadData.filename,
+                    filename: this.state.downloadData.filename + (this.state.downloadProgress > 0 ? ` - Downloading ${Math.round(this.state.downloadProgress * 100)}%` : ""),
                     url: null,
                     dlfc: true,
                     size: this.state.downloadData.totalSize,
@@ -201,6 +241,17 @@ module.exports = (Plugin, Library) => {
                     width: 30px; 
                     height: 40px; 
                     margin-right: 8px;
+                }
+
+                .slfClickable {
+                    cursor: pointer;
+                    background: none;
+                }
+                .slfIcon {
+                    color: var(--interactive-normal);
+                }
+                .slfClickable:hover .slfIcon {
+                    color: var(--interactive-hover);
                 }
             `);
 
@@ -347,12 +398,8 @@ module.exports = (Plugin, Library) => {
             Patcher.after(Attachment, "default", (_, args, ret) => {
                 ret.props.children[2].props.onClick = args[0].onClick;
                 if (args[0].dlfc) {
-                    ret.props.children[0] = React.createElement("img", {
-                        className: "dlfcIcon",
-                        alt: "Attachment file type: SplitLargeFiles Chunk File", 
-                        title: "SplitLargeFiles Chunk File",
-                        src: "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+Cjxzdmcgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgdmlld0JveD0iMCAwIDcyIDk2IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIHhtbDpzcGFjZT0icHJlc2VydmUiIHhtbG5zOnNlcmlmPSJodHRwOi8vd3d3LnNlcmlmLmNvbS8iIHN0eWxlPSJmaWxsLXJ1bGU6ZXZlbm9kZDtjbGlwLXJ1bGU6ZXZlbm9kZDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6MjsiPgogICAgPHBhdGggZD0iTTcyLDI5LjNMNzIsODkuNkM3Miw5MS44NCA3Miw5Mi45NiA3MS41Niw5My44MkM3MS4xOCw5NC41NiA3MC41Niw5NS4xOCA2OS44Miw5NS41NkM2OC45Niw5NiA2Ny44NCw5NiA2NS42LDk2TDYuNCw5NkM0LjE2LDk2IDMuMDQsOTYgMi4xOCw5NS41NkMxLjQ0LDk1LjE4IDAuODIsOTQuNTYgMC40NCw5My44MkMwLDkyLjk2IDAsOTEuODQgMCw4OS42TDAsNi40QzAsNC4xNiAwLDMuMDQgMC40NCwyLjE4QzAuODIsMS40NCAxLjQ0LDAuODIgMi4xOCwwLjQ0QzMuMDQsLTAgNC4xNiwtMCA2LjQsLTBMNDIuNywtMEM0NC42NiwtMCA0NS42NCwtMCA0Ni41NiwwLjIyQzQ3LjA2LDAuMzQgNDcuNTQsMC41IDQ4LDAuNzJMNDgsMTcuNkM0OCwxOS44NCA0OCwyMC45NiA0OC40NCwyMS44MkM0OC44MiwyMi41NiA0OS40NCwyMy4xOCA1MC4xOCwyMy41NkM1MS4wNCwyNCA1Mi4xNiwyNCA1NC40LDI0TDcxLjI4LDI0QzcxLjUsMjQuNDYgNzEuNjYsMjQuOTQgNzEuNzgsMjUuNDRDNzIsMjYuMzYgNzIsMjcuMzQgNzIsMjkuM1oiIHN0eWxlPSJmaWxsOnJnYigyMTEsMjE0LDI1Myk7ZmlsbC1ydWxlOm5vbnplcm87Ii8+CiAgICA8cGF0aCBkPSJNNjguMjYsMjAuMjZDNjkuNjQsMjEuNjQgNzAuMzIsMjIuMzIgNzAuODIsMjMuMTRDNzEsMjMuNDIgNzEuMTQsMjMuNyA3MS4yOCwyNEw1NC40LDI0QzUyLjE2LDI0IDUxLjA0LDI0IDUwLjE4LDIzLjU2QzQ5LjQ0LDIzLjE4IDQ4LjgyLDIyLjU2IDQ4LjQ0LDIxLjgyQzQ4LDIwLjk2IDQ4LDE5Ljg0IDQ4LDE3LjZMNDgsMC43MkM0OC4zLDAuODYgNDguNTgsMSA0OC44NiwxLjE4QzQ5LjY4LDEuNjggNTAuMzYsMi4zNiA1MS43NCwzLjc0TDY4LjI2LDIwLjI2WiIgc3R5bGU9ImZpbGw6cmdiKDE0NywxNTUsMjQ5KTtmaWxsLXJ1bGU6bm9uemVybzsiLz4KICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsNC41LDcpIj4KICAgICAgICA8cmVjdCB4PSIxMSIgeT0iNDEiIHdpZHRoPSI0MSIgaGVpZ2h0PSIyOCIgc3R5bGU9ImZpbGw6cmdiKDE0NywxNTUsMjQ5KTsiLz4KICAgIDwvZz4KICAgIDxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDAuNSwtMiwyMy41KSI+CiAgICAgICAgPHJlY3QgeD0iMjEiIHk9IjM5IiB3aWR0aD0iMTAiIGhlaWdodD0iMTAiIHN0eWxlPSJmaWxsOnJnYigxNDcsMTU1LDI0OSk7Ii8+CiAgICA8L2c+CiAgICA8ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwwLjUsMjIsMjMuNSkiPgogICAgICAgIDxyZWN0IHg9IjIxIiB5PSIzOSIgd2lkdGg9IjEwIiBoZWlnaHQ9IjEwIiBzdHlsZT0iZmlsbDpyZ2IoMTQ3LDE1NSwyNDkpOyIvPgogICAgPC9nPgo8L3N2Zz4K"
-                    });
+                    ret.props.children[0] = <FileIcon/>;
+                    // TODO: ret.props.children.splice(2, 0, <p>COPY</p>);
                 }
             });
 
