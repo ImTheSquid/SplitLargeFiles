@@ -666,7 +666,12 @@ module.exports = (Plugin, Library) => {
 
                 // Hide the rest of the messages
                 for (let messageIndex = 1; messageIndex < download.messages.length; messageIndex++) {
-                    this.setMessageVisibility(download.messages[messageIndex].id, false);
+                    // If using multi-upload-per-messages, make sure only attachments are hidden
+                    if (download.messages[messageIndex].id === download.messages[0].id) {
+                        this.setAttachmentVisibility(download.messages[0].id, messageIndex, false);
+                    } else {
+                        this.setMessageVisibility(download.messages[messageIndex].id, false);
+                    }
                 }
             });
 
@@ -697,9 +702,29 @@ module.exports = (Plugin, Library) => {
             }
         }
 
+        // If index = -1, set all to specified
+        setAttachmentVisibility(id, index, visible) {
+            const element = DOMTools.query(`#message-accessories-${id}`).children[index];
+            if (element) {
+                if (visible) {
+                    element.removeAttribute("hidden");
+                } else {
+                    element.setAttribute("hidden", "");
+                }
+            } else {
+                Logger.error(`Unable to find child DOM object at index ${index} with parent selector #message-accessories-${id}`);
+            }
+        }
+
         // Deletes a download with a delay to make sure Discord's API isn't spammed
         // Excludes a message that was already deleted
+        // Doesn't do anything if all of the download chunks were part of the same message
         deleteDownload(download, excludeMessage = null) {
+            // If all downloads in same message, do nothing
+            if (download.messages.map(msg => msg.id).every((id, i, arr) => id === arr[0])) {
+                return;
+            }
+
             BdApi.showToast(`Deleting chunks (1 chunk/${settings.deletionDelay} seconds)`, {type: "success"});
             let delayCount = 1;
             for (const message of this.getChannelMessages(this.getCurrentChannel().id)) {
