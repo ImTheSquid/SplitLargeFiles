@@ -7,14 +7,14 @@
             "github_username": "ImTheSquid",
             "twitter_username": "ImTheSquid11"
         }],
-        "version": "1.7.1",
+        "version": "1.7.2",
         "description": "Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.",
         "github": "https://github.com/ImTheSquid/SplitLargeFiles",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"
     },
     "changelog": [
         {"title": "Bug Fixes", "items": [
-            "Fixes issue where combined download would not show when all attachments are in a single message."
+            "Converted `dirtyDispatch` calls to `dispatch`"
         ]}
     ],
     "main": "bundled.js"

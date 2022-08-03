@@ -36,7 +36,7 @@ module.exports = (Plugin, Library) => {
             activeDownloads.set(downloadId(download), progress);
         }
 
-        Dispatcher.dirtyDispatch({
+        Dispatcher.dispatch({
             type: 'SLF_UPDATE_PROGRESS'
         });
     }
@@ -131,7 +131,7 @@ module.exports = (Plugin, Library) => {
 
                 activeDownloads.delete(downloadId(download));
 
-                Dispatcher.dirtyDispatch({
+                Dispatcher.dispatch({
                     type: 'SLF_UPDATE_PROGRESS'
                 });
 
@@ -676,7 +676,7 @@ module.exports = (Plugin, Library) => {
             });
 
             if (this.registeredDownloads.length > 0) {
-                Dispatcher.dirtyDispatch({
+                Dispatcher.dispatch({
                     type: "DLFC_REFRESH_DOWNLOADS",
                     downloads: this.registeredDownloads
                 });

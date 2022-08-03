@@ -28,7 +28,7 @@
 @else@*/
 
 module.exports = (() => {
-    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.7.1","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes","items":["Fixes issue where combined download would not show when all attachments are in a single message."]}],"main":"bundled.js"};
+    const config = {"info":{"name":"SplitLargeFiles","authors":[{"name":"ImTheSquid","discord_id":"262055523896131584","github_username":"ImTheSquid","twitter_username":"ImTheSquid11"}],"version":"1.7.2","description":"Splits files larger than the upload limit into smaller chunks that can be redownloaded into a full file later.","github":"https://github.com/ImTheSquid/SplitLargeFiles","github_raw":"https://raw.githubusercontent.com/ImTheSquid/SplitLargeFiles/master/SplitLargeFiles.plugin.js"},"changelog":[{"title":"Bug Fixes","items":["Converted `dirtyDispatch` calls to `dispatch`"]}],"main":"bundled.js"};
 
     return !global.ZeresPluginLibrary ? class {
         constructor() {this._config = config;}
@@ -81,7 +81,7 @@ module.exports = (() => {
     } else {
       activeDownloads.set(downloadId(download), progress);
     }
-    Dispatcher.dirtyDispatch({
+    Dispatcher.dispatch({
       type: "SLF_UPDATE_PROGRESS"
     });
   }
@@ -159,7 +159,7 @@ module.exports = (() => {
         BdApi.showToast("File reassembled successfully", { type: "success" });
         DiscordNative.fileManager.saveWithDialog(fs.readFileSync(path.join(tempFolder, `${download.filename}`)), download.filename);
         activeDownloads.delete(downloadId(download));
-        Dispatcher.dirtyDispatch({
+        Dispatcher.dispatch({
           type: "SLF_UPDATE_PROGRESS"
         });
         fs.rmdirSync(tempFolder, { recursive: true });
@@ -543,7 +543,7 @@ module.exports = (() => {
         }
       });
       if (this.registeredDownloads.length > 0) {
-        Dispatcher.dirtyDispatch({
+        Dispatcher.dispatch({
           type: "DLFC_REFRESH_DOWNLOADS",
           downloads: this.registeredDownloads
         });
